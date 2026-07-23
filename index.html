@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OPTIMAX - BỘ TỐI ƯU HÓA WINDOWS TOÀN DIỆN</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="dashboard-container">
+        <!-- Header -->
+        <div class="header">
+            <div class="title-group">
+                <h1>OPTIMAX</h1>
+                <p>Bộ Công Cụ Tinh Chỉnh Hiệu Năng Máy Trạm & Gaming PC • Kernel, RAM, Ổ Đĩa & Mạng</p>
+            </div>
+            <div class="status-badge-group">
+                <div class="badge" id="adminBadge">
+                    <div class="badge-dot"></div>
+                    <span>QUYỀN HỆ THỐNG: <span style="color: var(--text-muted);">ĐANG KIỂM TRA...</span></span>
+                </div>
+                <div class="badge" id="autostartBadge">
+                    <span>TỰ ĐỘNG KHỞI ĐỘNG: <span style="color: var(--text-muted);">ĐANG KIỂM TRA...</span></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Metrics Grid -->
+        <div class="metrics-grid">
+            <!-- Card 1: RAM -->
+            <div class="metric-card">
+                <div class="metric-header">
+                    <div class="metric-header-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"></rect><path d="M6 12h4m4 0h4M6 2v4m4-4v4m4-4v4m4-4v4M6 18v4m4-4v4m4-4v4m4-4v4"></path></svg>
+                        BỘ NHỚ RAM
+                    </div>
+                    <span>THỜI GIAN THỰC</span>
+                </div>
+                <div class="metric-value" id="ramUsedVal">-- GB</div>
+                <div class="metric-sub" id="ramFreeSub">ĐANG TẢI DỮ LIỆU...</div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="ramProgress" style="width: 0%;"></div>
+                </div>
+            </div>
+
+            <!-- Card 2: CPU -->
+            <div class="metric-card">
+                <div class="metric-header">
+                    <div class="metric-header-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"></rect><rect x="9" y="9" width="6" height="6"></rect><path d="M15 2v2M9 2v2M15 20v2M9 20v2M20 15h2M20 9h2M2 15h2M2 9h2"></path></svg>
+                        MỨC TẢI CPU & NĂNG LƯỢNG
+                    </div>
+                    <span id="powerPlanBadge" style="color: var(--primary);">POWER PLAN</span>
+                </div>
+                <div class="metric-value" id="cpuLoadVal" style="color: var(--primary);">0% MỨC TẢI</div>
+                <div class="metric-sub" id="cpuInfoSub">ĐANG PHÂN TÍCH CPU...</div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="cpuProgress" style="width: 0%; background: linear-gradient(90deg, #38bdf8, #818cf8);"></div>
+                </div>
+            </div>
+
+            <!-- Card 3: NETWORK & STORAGE -->
+            <div class="metric-card">
+                <div class="metric-header">
+                    <div class="metric-header-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"></path></svg>
+                        TỐC ĐỘ MẠNG & Ổ ĐĨA C:
+                    </div>
+                    <span id="netTypeBadge">CARD MẠNG</span>
+                </div>
+                <div class="metric-value" id="netSpeedVal" style="color: var(--success); font-size: 1.5rem;">TẢI VỀ: 0.0 KB/s | TẢI LÊN: 0.0 KB/s</div>
+                <div class="metric-sub" id="diskFreeSub">Ổ C: -- GB TRỐNG</div>
+                <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" id="diskProgress" style="width: 0%; background: linear-gradient(90deg, #34d399, #fbbf24);"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Actions Section -->
+        <div class="actions-section">
+            <div class="section-header">
+                <div class="section-title">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                    BẢNG ĐIỀU KHIỂN & CÁC PHÂN HỆ TỐI ƯU CHUYÊN SÂU
+                </div>
+            </div>
+            
+            <div class="button-grid">
+                <!-- Standard Actions -->
+                <button class="btn btn-primary" onclick="runCheck()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                    <span>1. KIỂM TRA HIỆU NĂNG</span>
+                    <span class="btn-tag">AUDIT</span>
+                </button>
+
+                <button class="btn btn-purple" onclick="runOptimize()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>
+                    <span>2. TỐI ƯU RAM & DỌN RÁC</span>
+                    <span class="btn-tag">OPTIMIZE</span>
+                </button>
+
+                <button class="btn btn-warning" onclick="runFix()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+                    <span>3. SỬA LỖI WINDOWS & WINSXS</span>
+                    <span class="btn-tag">FIX</span>
+                </button>
+
+                <button class="btn btn-primary" onclick="runAdvanced()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                    <span>4. UNPARK CPU & CHẾ ĐỘ ĐIỆN</span>
+                    <span class="btn-tag">ADVANCED</span>
+                </button>
+
+                <button class="btn btn-success" onclick="runPro()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+                    <span>5. TỐI ƯU TCP NAGLE & SSD</span>
+                    <span class="btn-tag">PRO</span>
+                </button>
+
+                <button class="btn btn-success" onclick="runRestorePoint()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+                    <span>6. TẠO ĐIỂM KHÔI PHỦC</span>
+                    <span class="btn-tag">RESTORE</span>
+                </button>
+
+                <button class="btn btn-warning" onclick="runCleanRestore()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    <span>7. XÓA BẢN SAO RESTORE CŨ</span>
+                    <span class="btn-tag">CLEAN</span>
+                </button>
+
+                <button class="btn btn-warning" onclick="runDeepJunk()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+                    <span>8. XÓA GPU SHADER & CACHE</span>
+                    <span class="btn-tag">CACHE</span>
+                </button>
+
+                <button class="btn btn-purple" onclick="runStorageExtreme()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M21 19c0 1.66-4 3-9 3s-9-1.34-9-3"></path></svg>
+                    <span>9. TẮT HIBERNATION (SSD)</span>
+                    <span class="btn-tag">STORAGE</span>
+                </button>
+
+                <button class="btn btn-danger" onclick="runBloatware()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+                    <span>10. GỠ UWP APPS & TELEMETRY</span>
+                    <span class="btn-tag">DEBLOAT</span>
+                </button>
+
+                <button class="btn btn-primary" onclick="runStandbyRAM()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path></svg>
+                    <span>11. DỌN BỘ NHỚ STANDBY RAM</span>
+                    <span class="btn-tag">RAM</span>
+                </button>
+
+                <button class="btn btn-accent btn-span-2" onclick="runUltra()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
+                    <span>12. ULTRA KERNEL 0x26, 0MS UI & COMPACT OS</span>
+                    <span class="btn-tag">ULTRA</span>
+                </button>
+
+                <!-- New Extreme Modules -->
+                <button class="btn btn-purple" onclick="runMSIMode()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"></rect><path d="M9 9h6v6H9z"></path></svg>
+                    <span>13. BẬT PCIE MSI MODE (GPU/NET)</span>
+                    <span class="btn-tag">MSI</span>
+                </button>
+
+                <button class="btn btn-warning" onclick="runDisableMPO()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
+                    <span>14. TẮT MULTI-PLANE OVERLAY (MPO)</span>
+                    <span class="btn-tag">MPO</span>
+                </button>
+
+                <button class="btn btn-success" onclick="runMultiDriveTrim()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M22 12H2M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+                    <span>15. TRIM TẤT CẢ Ổ SSD</span>
+                    <span class="btn-tag">TRIM</span>
+                </button>
+
+                <button class="btn btn-danger" onclick="runHardenedServices()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
+                    <span>16. TẮT VĨNH VIỄN SYSMAIN & TELEMETRY</span>
+                    <span class="btn-tag">SERVICES</span>
+                </button>
+
+                <button class="btn btn-primary btn-span-2" onclick="runPagefileFix()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M21 19c0 1.66-4 3-9 3s-9-1.34-9-3"></path></svg>
+                    <span>17. CỐ ĐỊNH PAGEFILE 4096MB CHỐNG TẢI SSD</span>
+                    <span class="btn-tag">PAGEFILE</span>
+                </button>
+
+                <!-- Autostart Boot Controls -->
+                <button class="btn btn-success btn-span-2" onclick="runEnableStartup()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
+                    <span>KÍCH HOẠT TỰ ĐỘNG TỐI ƯU KHI KHỞI ĐỘNG</span>
+                    <span class="btn-tag">AUTOSTART</span>
+                </button>
+
+                <button class="btn btn-danger" onclick="runDisableStartup()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg>
+                    <span>TẮT TỰ ĐỘNG KHỞI ĐỘNG</span>
+                </button>
+
+                <button class="btn btn-full" style="background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.1);" onclick="runRevert()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="1 4 1 10 7 10"></polyline><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path></svg>
+                    <span>KHÔI PHỦC TẤT CẢ VỀ MẶC ĐỊNH WINDOWS</span>
+                    <span class="btn-tag">REVERT</span>
+                </button>
+
+                <!-- One-Click Master Buttons -->
+                <button class="btn btn-primary btn-full" style="padding: 1.1rem; font-size: 0.92rem; font-weight: 700;" onclick="runAllInOne()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                    <span>CHẠY TOÀN BỘ TỐI ƯU CƠ BẢN (PHÂN HỆ 1 - 5)</span>
+                </button>
+
+                <button class="btn btn-accent btn-full" style="padding: 1.2rem; font-size: 0.98rem; font-weight: 800; background: linear-gradient(135deg, rgba(168, 85, 247, 0.25), rgba(236, 72, 153, 0.25)); border-color: rgba(168, 85, 247, 0.5);" onclick="runExtreme()">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.71.11-2.86-.57-3.54l-.43-.46c-.68-.68-2.83-1.28-3.5 1zm0 0L12 9h.5s4 0 6-2l-3.5-3.5L17 1.5l5.5 5.5-2 2-3.5-3.5v.5c-2 2-2 6-2 6l-7.5 7.5z"></path></svg>
+                    <span>CHẠY TỐI ƯU TRIỆT ĐỂ EXTREME 100% (TOÀN BỘ PHÂN HỆ 1 - 12)</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Log Console -->
+        <div class="console-card">
+            <div class="console-header">
+                <div class="console-title">
+                    <svg viewBox="0 0 24 24" stroke="currentColor" fill="none" width="16" height="16"><polyline points="4 17 10 11 4 5"></polyline><line x1="12" y1="19" x2="20" y2="19"></line></svg>
+                    <span>MÀN_HÌNH_NHẬT_KÝ_HỆ_THỐNG</span>
+                </div>
+                <span id="logTime" style="font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; color: var(--text-muted);">THỜI GIAN: --:--:--</span>
+            </div>
+            <div class="console-body" id="consoleLog">
+                <div class="log-line info">[HỆ THỐNG] Đã khởi tạo bảng điều khiển tối ưu hóa OPTIMAX.</div>
+                <div class="log-line success">[✓] PowerShell Core Engine: Optimax.ps1 (Radical Deep Edition)</div>
+                <div class="log-line success">[✓] Node.js Real-time Backend Active.</div>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
