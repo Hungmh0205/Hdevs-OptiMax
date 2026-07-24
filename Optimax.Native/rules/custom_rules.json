@@ -1,0 +1,59 @@
+[
+  {
+    "ruleId": "discord_cache",
+    "name": "Discord App Cache & GPU Cache",
+    "condition": {
+      "minOsBuild": 10000,
+      "maxOsBuild": 30000,
+      "targetAppExecutable": "%APPDATA%\\discord\\Update.exe"
+    },
+    "basePaths": [
+      "%APPDATA%\\discord"
+    ],
+    "includePatterns": [
+      "Cache\\*",
+      "Code Cache\\*",
+      "GPUCache\\*"
+    ],
+    "excludeRegex": [
+      ".*\\\\settings\\.json$",
+      ".*\\\\storage\\\\.*"
+    ]
+  },
+  {
+    "ruleId": "vscode_cache",
+    "name": "VS Code Workspace & Cached Data",
+    "condition": {
+      "minOsBuild": 10000,
+      "maxOsBuild": 30000,
+      "targetAppExecutable": "%LOCALAPPDATA%\\Programs\\Microsoft VS Code\\Code.exe"
+    },
+    "basePaths": [
+      "%APPDATA%\\Code"
+    ],
+    "includePatterns": [
+      "Cache\\*",
+      "CachedData\\*",
+      "GPUCache\\*",
+      "User\\workspaceStorage\\*"
+    ],
+    "excludeRegex": []
+  },
+  {
+    "ruleId": "browser_cache",
+    "name": "Chrome and Edge Web Cache",
+    "condition": {
+      "minOsBuild": 10000,
+      "maxOsBuild": 30000
+    },
+    "basePaths": [
+      "%LOCALAPPDATA%\\Google\\Chrome\\User Data\\Default",
+      "%LOCALAPPDATA%\\Microsoft\\Edge\\User Data\\Default"
+    ],
+    "includePatterns": [
+      "Cache\\*",
+      "Code Cache\\*"
+    ],
+    "excludeRegex": []
+  }
+]

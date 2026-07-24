@@ -1,1 +1,33 @@
-/Windows-System-Optimizer-v2.0.0.zip
+# Build & Release Outputs
+bin/
+obj/
+publish/
+release/
+*.zip
+*.7z
+
+# Dynamic Rules & Backups
+rules/custom_rules.json
+optimax_state_backup.json
+autopilot.json
+
+# Logs & Temporary Data
+*.log
+*.tmp
+optimax.log
+
+# Visual Studio & IDE settings
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosv
+*.sln.docstates
+*.cache
+
+# OS Generated Files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/

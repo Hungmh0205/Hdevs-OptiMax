@@ -1,0 +1,840 @@
+<Window x:Class="Optimax.UI.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:Optimax.UI"
+        Title="OPTIMAX - BỘ TỐI ƯU HÓA WINDOWS TOÀN DIỆN (WPF NATIVE)" Height="740" Width="1140" MinHeight="580" MinWidth="900"
+        WindowStartupLocation="CenterScreen"
+        Background="#0B0F19" Foreground="#F8FAFC"
+        FontFamily="Segoe UI, Inter, Arial">
+
+    <Window.Resources>
+        <local:BoolToStatusConverter x:Key="BoolToStatusConverter"/>
+        <local:BoolToColorConverter x:Key="BoolToColorConverter"/>
+
+        <!-- Modern Dark Glass Card Style -->
+        <Style x:Key="GlassCard" TargetType="Border">
+            <Setter Property="Background" Value="#111827"/>
+            <Setter Property="BorderBrush" Value="#1F2937"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Padding" Value="16"/>
+        </Style>
+
+        <!-- Preset Card Style -->
+        <Style x:Key="PresetCard" TargetType="Border">
+            <Setter Property="Background" Value="#111827"/>
+            <Setter Property="BorderBrush" Value="#1F2937"/>
+            <Setter Property="BorderThickness" Value="2"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Padding" Value="16"/>
+            <Setter Property="Cursor" Value="Hand"/>
+        </Style>
+
+        <!-- Custom CheckBox Card Style -->
+        <Style TargetType="CheckBox">
+            <Setter Property="Foreground" Value="#F8FAFC"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="CheckBox">
+                        <Border x:Name="CardBorder" Background="#111827" BorderBrush="#1F2937" BorderThickness="1" CornerRadius="10" Padding="12,10" Margin="0,0,0,8">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <Border x:Name="CheckBoxBorder" Width="20" Height="20" CornerRadius="5" Background="#1E293B" BorderBrush="#334155" BorderThickness="1.5" VerticalAlignment="Center" Margin="0,0,12,0">
+                                    <TextBlock x:Name="CheckMark" Text="✓" Foreground="White" FontWeight="Bold" FontSize="14" HorizontalAlignment="Center" VerticalAlignment="Center" Visibility="Collapsed"/>
+                                </Border>
+                                <ContentPresenter Grid.Column="1" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="CardBorder" Property="BorderBrush" Value="#0EA5E9"/>
+                                <Setter TargetName="CardBorder" Property="Background" Value="#0F172A"/>
+                                <Setter TargetName="CheckBoxBorder" Property="Background" Value="#0EA5E9"/>
+                                <Setter TargetName="CheckBoxBorder" Property="BorderBrush" Value="#0EA5E9"/>
+                                <Setter TargetName="CheckMark" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="CardBorder" Property="BorderBrush" Value="#38BDF8"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Custom RadioButton Style -->
+        <Style TargetType="RadioButton">
+            <Setter Property="Foreground" Value="#CBD5E1"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Margin" Value="0,0,12,0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="RadioBorder" Background="#1E293B" BorderBrush="#334155" BorderThickness="1" CornerRadius="8" Padding="10,6">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Ellipse x:Name="Dot" Width="10" Height="10" Fill="#0EA5E9" Margin="0,0,8,0" Visibility="Collapsed"/>
+                                <ContentPresenter VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="RadioBorder" Property="Background" Value="#0EA5E9"/>
+                                <Setter TargetName="RadioBorder" Property="BorderBrush" Value="#0EA5E9"/>
+                                <Setter TargetName="Dot" Property="Visibility" Value="Visible"/>
+                                <Setter TargetName="Dot" Property="Fill" Value="White"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Action Button Style -->
+        <Style x:Key="BtnExecute" TargetType="Button">
+            <Setter Property="Background">
+                <Setter.Value>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                        <GradientStop Color="#0EA5E9" Offset="0"/>
+                        <GradientStop Color="#2563EB" Offset="1"/>
+                    </LinearGradientBrush>
+                </Setter.Value>
+            </Setter>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Padding" Value="20,12"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="BtnBorder" Background="#0EA5E9" CornerRadius="10" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="BtnBorder" Property="Background" Value="#0284C7"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="BtnOutline" TargetType="Button">
+            <Setter Property="Background" Value="#1E293B"/>
+            <Setter Property="Foreground" Value="#CBD5E1"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="#334155"/>
+            <Setter Property="Padding" Value="14,10"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="BtnBorder" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="10" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="BtnBorder" Property="Background" Value="#334155"/>
+                                <Setter Property="Foreground" Value="White"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- DataGrid Style -->
+        <Style TargetType="DataGrid">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="RowBackground" Value="#111827"/>
+            <Setter Property="AlternatingRowBackground" Value="#1E293B"/>
+            <Setter Property="GridLinesVisibility" Value="Horizontal"/>
+            <Setter Property="HorizontalGridLinesBrush" Value="#334155"/>
+            <Setter Property="HeadersVisibility" Value="Column"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="#F8FAFC"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="RowHeight" Value="36"/>
+            <Setter Property="AutoGenerateColumns" Value="False"/>
+            <Setter Property="CanUserAddRows" Value="False"/>
+            <Setter Property="IsReadOnly" Value="True"/>
+        </Style>
+
+        <Style TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="#1E293B"/>
+            <Setter Property="Foreground" Value="#38BDF8"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Padding" Value="10,6"/>
+            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+            <Setter Property="BorderBrush" Value="#334155"/>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <Grid Margin="24">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/> <!-- Header -->
+                    <RowDefinition Height="Auto"/> <!-- Metrics Grid (3 Cards) -->
+                    <RowDefinition Height="Auto"/> <!-- Mode Presets -->
+                    <RowDefinition Height="Auto"/> <!-- Smart Autopilot -->
+                    <RowDefinition Height="Auto"/> <!-- 2-Column Options -->
+                    <RowDefinition Height="Auto"/> <!-- Quick Native Engines Bar -->
+                    <RowDefinition Height="Auto"/> <!-- Bottom Action Panel -->
+                    <RowDefinition Height="Auto"/> <!-- Log Console -->
+                </Grid.RowDefinitions>
+
+                <!-- 1. Header Bar -->
+                <Grid Grid.Row="0" Margin="0,0,0,18">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel VerticalAlignment="Center">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="OPTIMAX" FontSize="26" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,12,0"/>
+                            <Border Background="#0EA5E9" CornerRadius="12" Padding="10,3" VerticalAlignment="Center">
+                                <TextBlock Text="WPF NATIVE V2.0" FontSize="11" FontWeight="Bold" Foreground="White"/>
+                            </Border>
+                        </StackPanel>
+                        <TextBlock Text="Bộ Công Cụ Tinh Chỉnh Hiệu Năng Máy Trạm &amp; Gaming PC • Kernel, RAM, Ổ Đĩa &amp; Mạng" FontSize="13" Foreground="#94A3B8" Margin="0,2,0,0"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Border x:Name="AdminBadge" Background="#1E293B" CornerRadius="20" Padding="14,8" Margin="0,0,10,0">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse x:Name="AdminDot" Width="8" Height="8" Fill="#10B981" Margin="0,0,8,0"/>
+                                <TextBlock x:Name="TxtAdminStatus" Text="QUYỀN HỆ THỐNG: QUYỀN ADMIN" FontSize="12" FontWeight="Bold" Foreground="#10B981"/>
+                            </StackPanel>
+                        </Border>
+                        <Button x:Name="BtnAutostartBadge" Click="BtnAutostartBadge_Click" Style="{StaticResource BtnOutline}" Padding="14,6">
+                            <TextBlock x:Name="TxtAutostartBadge" Text="TỰ ĐỘNG KHỞI ĐỘNG: ĐANG KIỂM TRA..." FontSize="12" FontWeight="Bold"/>
+                        </Button>
+                        <Button x:Name="BtnImportWinapp2" Click="BtnImportWinapp2_Click" Style="{StaticResource BtnOutline}" Padding="14,6" Margin="10,0,0,0">
+                            <TextBlock Text="📂 NẠP RULE WINAPP2.INI" FontSize="12" FontWeight="Bold" Foreground="#38BDF8"/>
+                        </Button>
+                    </StackPanel>
+                </Grid>
+
+                <!-- 2. Metrics Grid (3 Cards) -->
+                <Grid Grid.Row="1" Margin="0,0,0,18">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Card 1: RAM -->
+                    <Border Grid.Column="0" Style="{StaticResource GlassCard}" Margin="0,0,12,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0">
+                                <TextBlock Text="🧠 BỘ NHỚ RAM" FontSize="12" FontWeight="Bold" Foreground="#38BDF8"/>
+                                <TextBlock Text="THỜI GIAN THỰC" FontSize="11" Foreground="#64748B" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <TextBlock x:Name="TxtRamUsedVal" Grid.Row="1" Text="-- GB (--%)" FontSize="22" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,8,0,4"/>
+                            <TextBlock x:Name="TxtRamFreeSub" Grid.Row="2" Text="CÒN TRỐNG: -- GB / -- GB" FontSize="11" Foreground="#94A3B8" Margin="0,0,0,10"/>
+                            <ProgressBar x:Name="PbRam" Grid.Row="3" Height="6" Value="0" Maximum="100" Background="#1E293B" Foreground="#38BDF8" BorderThickness="0"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Card 2: CPU -->
+                    <Border Grid.Column="1" Style="{StaticResource GlassCard}" Margin="0,0,12,0">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0">
+                                <TextBlock Text="⚡ MỨC TẢI CPU &amp; NĂNG LƯỢNG" FontSize="12" FontWeight="Bold" Foreground="#A855F7"/>
+                                <TextBlock x:Name="TxtPowerPlanBadge" Text="ULTIMATE PERFORMANCE" FontSize="11" FontWeight="Bold" Foreground="#A855F7" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <TextBlock x:Name="TxtCpuLoadVal" Grid.Row="1" Text="0% MỨC TẢI" FontSize="22" FontWeight="Bold" Foreground="#A855F7" Margin="0,8,0,4"/>
+                            <TextBlock x:Name="TxtCpuInfoSub" Grid.Row="2" Text="Intel Processor | Active Workstation" FontSize="11" Foreground="#94A3B8" Margin="0,0,0,10"/>
+                            <ProgressBar x:Name="PbCpu" Grid.Row="3" Height="6" Value="0" Maximum="100" Background="#1E293B" Foreground="#A855F7" BorderThickness="0"/>
+                        </Grid>
+                    </Border>
+
+                    <!-- Card 3: NETWORK & DISK -->
+                    <Border Grid.Column="2" Style="{StaticResource GlassCard}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0">
+                                <TextBlock Text="🌐 TỐC ĐỘ MẠNG &amp; Ổ ĐĨA C:" FontSize="12" FontWeight="Bold" Foreground="#10B981"/>
+                                <TextBlock x:Name="TxtNetTypeBadge" Text="CARD MẠNG" FontSize="11" Foreground="#64748B" HorizontalAlignment="Right"/>
+                            </Grid>
+                            <TextBlock x:Name="TxtNetSpeedVal" Grid.Row="1" Text="TẢI VỀ: 0.0 KB/s | TẢI LÊN: 0.0 KB/s" FontSize="15" FontWeight="Bold" Foreground="#10B981" Margin="0,12,0,6"/>
+                            <TextBlock x:Name="TxtDiskFreeSub" Grid.Row="2" Text="Ổ C: -- GB TRỐNG" FontSize="11" Foreground="#94A3B8" Margin="0,0,0,10"/>
+                            <ProgressBar x:Name="PbDisk" Grid.Row="3" Height="6" Value="0" Maximum="100" Background="#1E293B" Foreground="#10B981" BorderThickness="0"/>
+                        </Grid>
+                    </Border>
+                </Grid>
+
+                <!-- 3. Mode Presets Selector -->
+                <Border Grid.Row="2" Style="{StaticResource GlassCard}" Margin="0,0,0,18">
+                    <StackPanel>
+                        <TextBlock Text="⭐ CHỌN CHẾ ĐỘ TỐI ƯU CẤU HÌNH SẴN (MODE PRESETS)" FontSize="13" FontWeight="Bold" Foreground="#F59E0B" Margin="0,0,0,12"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Border x:Name="CardPresetPc" Grid.Column="0" Style="{StaticResource PresetCard}" BorderBrush="#0EA5E9" Margin="0,0,12,0" MouseDown="PresetPc_Click">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="🖥️" FontSize="32" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="PC MODE (MÁY TÍNH ĐỂ BÀN)" FontSize="14" FontWeight="Bold" Foreground="#F8FAFC"/>
+                                        <TextBlock Text="Tối ưu tối đa hiệu năng Gaming &amp; Workstation. Tắt VBS, tắt Hibernation, chọn Ultimate Power Plan." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <Border Grid.Column="2" Background="#0EA5E9" CornerRadius="6" Padding="8,4" VerticalAlignment="Top">
+                                        <TextBlock Text="EXTREME PERFORMANCE" FontSize="10" FontWeight="Bold" Foreground="White"/>
+                                    </Border>
+                                </Grid>
+                            </Border>
+
+                            <Border x:Name="CardPresetLaptop" Grid.Column="1" Style="{StaticResource PresetCard}" MouseDown="PresetLaptop_Click">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="💻" FontSize="32" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <TextBlock Text="LAPTOP MODE (MÁY TÍNH XÁCH TAY)" FontSize="14" FontWeight="Bold" Foreground="#F8FAFC"/>
+                                        <TextBlock Text="Tối ưu an toàn. Giữ Hibernation/Sleep, giữ Windows Search &amp; Spooler, bật VBS, chọn Balanced Power Plan." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                    <Border Grid.Column="2" Background="#10B981" CornerRadius="6" Padding="8,4" VerticalAlignment="Top">
+                                        <TextBlock Text="BATTERY &amp; SAFE" FontSize="10" FontWeight="Bold" Foreground="White"/>
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- 4. Smart Auto-Pilot Daemon Section -->
+                <Border Grid.Row="3" Style="{StaticResource GlassCard}" BorderBrush="#10B981" BorderThickness="1" Margin="0,0,0,18">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel VerticalAlignment="Center">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="🛡️ CHẾ ĐỘ AUTO-PILOT ĐẠI LÝ CHỦ ĐỘNG (REALTIME MONITOR)" FontSize="13" FontWeight="Bold" Foreground="#10B981" Margin="0,0,10,0"/>
+                                <Border Background="#064E3B" CornerRadius="6" Padding="8,2">
+                                    <TextBlock Text="ZERO-USER INTERVENTION" FontSize="10" FontWeight="Bold" Foreground="#34D399"/>
+                                </Border>
+                            </StackPanel>
+                            <TextBlock Text="Tự động theo dõi rác đĩa C: (>10GB) &amp; mức chiếm RAM (>85%) để xả RAM/dọn rác ngầm không gây làm phiền." FontSize="11" Foreground="#94A3B8" Margin="0,4,0,0"/>
+                        </StackPanel>
+                        <Button x:Name="BtnToggleAutopilot" Grid.Column="1" Content="TRẠNG THÁI: DỪNG (OFF)" Style="{StaticResource BtnOutline}" Click="BtnToggleAutopilot_Click" Padding="16,8"/>
+                    </Grid>
+                </Border>
+
+                <!-- 5. 2-Column Core Options Grid -->
+                <Grid Grid.Row="4" Margin="0,0,0,18">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- COLUMN 1: Essential Cleaners & Tweaks -->
+                    <Border Grid.Column="0" Style="{StaticResource GlassCard}" Margin="0,0,12,0">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,14">
+                                <TextBlock Text="🚀 CỘT 1: CÁC HẠNG MỤC DỌN RÁC &amp; TINH CHỈNH CORE" FontSize="13" FontWeight="Bold" Foreground="#0EA5E9"/>
+                                <Border Background="#0369A1" CornerRadius="6" Padding="8,3" HorizontalAlignment="Right">
+                                    <TextBlock Text="AUTOMATIC SCAN" FontSize="10" FontWeight="Bold" Foreground="White"/>
+                                </Border>
+                            </Grid>
+
+                            <StackPanel x:Name="Col1Checkboxes">
+                                <CheckBox x:Name="chk_SysTempClean" IsChecked="True">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel><TextBlock Text="1. Dọn Dẹp Tệp Tạm Hệ Thống (%TEMP%, WinTemp, Prefetch)" FontWeight="Bold"/><TextBlock Text="Giải phóng hàng chục GB rác sinh ra bởi ứng dụng và Windows Update." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap"/></StackPanel>
+                                        <Border Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="6,2" VerticalAlignment="Top"><TextBlock Text="-SysTemp" FontSize="10" Foreground="#38BDF8"/></Border>
+                                    </Grid>
+                                </CheckBox>
+
+                                <CheckBox x:Name="chk_DisableVBS" IsChecked="True">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel><TextBlock Text="2. Tắt VBS / Memory Integrity (Tăng FPS Game)" FontWeight="Bold"/><TextBlock Text="Vô hiệu hóa Virtualization-based Security giúp tăng 5-15% FPS trong Game." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap"/></StackPanel>
+                                        <Border Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="6,2" VerticalAlignment="Top"><TextBlock Text="-DisableVBS" FontSize="10" Foreground="#38BDF8"/></Border>
+                                    </Grid>
+                                </CheckBox>
+
+                                <CheckBox x:Name="chk_DeepJunk" IsChecked="True">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel><TextBlock Text="3. Dọn Shader Cache GPU &amp; Cache Trình Duyệt" FontWeight="Bold"/><TextBlock Text="Xóa DirectX/NVIDIA/AMD Shader cache, Browser Cache (Chrome, Edge, Firefox)." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap"/></StackPanel>
+                                        <Border Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="6,2" VerticalAlignment="Top"><TextBlock Text="-DeepJunk" FontSize="10" Foreground="#38BDF8"/></Border>
+                                    </Grid>
+                                </CheckBox>
+
+                                <CheckBox x:Name="chk_MSIMode" IsChecked="True">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel><TextBlock Text="4. Bật PCIe MSI Mode (GPU &amp; Network)" FontWeight="Bold"/><TextBlock Text="Chuyển ngắt IRQ sang Message Signaled Interrupts, giảm DPC Latency Spikes." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap"/></StackPanel>
+                                        <Border Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="6,2" VerticalAlignment="Top"><TextBlock Text="-MSIMode" FontSize="10" Foreground="#38BDF8"/></Border>
+                                    </Grid>
+                                </CheckBox>
+
+                                <CheckBox x:Name="chk_DisableMPO" IsChecked="True">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel><TextBlock Text="5. Tắt Multi-Plane Overlay (MPO)" FontWeight="Bold"/><TextBlock Text="Sửa triệt để lỗi chớp màn hình, nhấp nháy đen DWM khi vừa xem video vừa chơi game." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap"/></StackPanel>
+                                        <Border Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="6,2" VerticalAlignment="Top"><TextBlock Text="-DisableMPO" FontSize="10" Foreground="#38BDF8"/></Border>
+                                    </Grid>
+                                </CheckBox>
+
+                                <CheckBox x:Name="chk_QoSNet" IsChecked="True">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel><TextBlock Text="6. Mở khóa 100% QoS &amp; Fast Cloudflare DNS" FontWeight="Bold"/><TextBlock Text="Loại bỏ 20% giới hạn băng thông ngầm và tự động cấu hình DNS 1.1.1.1 siêu tốc." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap"/></StackPanel>
+                                        <Border Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="6,2" VerticalAlignment="Top"><TextBlock Text="-QoSNet" FontSize="10" Foreground="#38BDF8"/></Border>
+                                    </Grid>
+                                </CheckBox>
+
+                                <CheckBox x:Name="chk_MultiDriveTrim" IsChecked="True">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel><TextBlock Text="7. ReTrim Đa Ổ SSD &amp; Defrag HDD" FontWeight="Bold"/><TextBlock Text="Tự động nhận diện và gửi lệnh ReTrim đến toàn bộ các phân vùng đĩa SSD." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap"/></StackPanel>
+                                        <Border Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="6,2" VerticalAlignment="Top"><TextBlock Text="-MultiDriveTrim" FontSize="10" Foreground="#38BDF8"/></Border>
+                                    </Grid>
+                                </CheckBox>
+
+                                <CheckBox x:Name="chk_UXDebloat" IsChecked="True">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel><TextBlock Text="8. Dọn Menu Chuột Phải &amp; Tắt Recall AI" FontWeight="Bold"/><TextBlock Text="Menu chuột phải mở tức thì (0ms delay), tắt chụp màn hình ngầm Recall AI." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap"/></StackPanel>
+                                        <Border Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="6,2" VerticalAlignment="Top"><TextBlock Text="-UXDebloat" FontSize="10" Foreground="#38BDF8"/></Border>
+                                    </Grid>
+                                </CheckBox>
+
+                                <CheckBox x:Name="chk_Bloatware" IsChecked="True">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel><TextBlock Text="9. Gỡ UWP Bloatware &amp; Telemetry Tasks" FontWeight="Bold"/><TextBlock Text="Gỡ ứng dụng rác tích hợp (CandyCrush, News...) và tắt Scheduled Tasks ngầm." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap"/></StackPanel>
+                                        <Border Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="6,2" VerticalAlignment="Top"><TextBlock Text="-Bloatware" FontSize="10" Foreground="#38BDF8"/></Border>
+                                    </Grid>
+                                </CheckBox>
+
+                                <CheckBox x:Name="chk_StandbyRAM" IsChecked="True">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel><TextBlock Text="10. Dọn Standby RAM &amp; Memory Compression" FontWeight="Bold"/><TextBlock Text="Giải phóng bộ nhớ rảnh Standby List, giúp game không bị giật khựng khi load map." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap"/></StackPanel>
+                                        <Border Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="6,2" VerticalAlignment="Top"><TextBlock Text="-StandbyRAM" FontSize="10" Foreground="#38BDF8"/></Border>
+                                    </Grid>
+                                </CheckBox>
+
+                                <CheckBox x:Name="chk_TimerResolution" IsChecked="True">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel><TextBlock Text="11. Tắt Dynamic Tick &amp; Cố Định Timer (0.5ms)" FontWeight="Bold"/><TextBlock Text="Tắt dynamic tick throttling, giữ tần số timer cố định khử giật mượt màn 144Hz+." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap"/></StackPanel>
+                                        <Border Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="6,2" VerticalAlignment="Top"><TextBlock Text="-TimerRes" FontSize="10" Foreground="#38BDF8"/></Border>
+                                    </Grid>
+                                </CheckBox>
+
+                                <CheckBox x:Name="chk_MMCSSTuning" IsChecked="True">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel><TextBlock Text="12. MMCSS Game Scheduler Priority Boost" FontWeight="Bold"/><TextBlock Text="Cấp ưu tiên phần cứng cao nhất cho Game (GPU Priority 8 &amp; CPU Priority High)." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap"/></StackPanel>
+                                        <Border Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="6,2" VerticalAlignment="Top"><TextBlock Text="-MMCSS" FontSize="10" Foreground="#38BDF8"/></Border>
+                                    </Grid>
+                                </CheckBox>
+
+                                <CheckBox x:Name="chk_NetAdapterOptimization" IsChecked="True">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel><TextBlock Text="13. Tối ưu Card Mạng RSS &amp; Tắt EEE Offload" FontWeight="Bold"/><TextBlock Text="Bật RSS đa nhân card mạng và tắt cơ chế thắt điện EEE ngầm chống nhảy ping." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap"/></StackPanel>
+                                        <Border Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="6,2" VerticalAlignment="Top"><TextBlock Text="-NetAdapter" FontSize="10" Foreground="#38BDF8"/></Border>
+                                    </Grid>
+                                </CheckBox>
+
+                                <CheckBox x:Name="chk_ThirdPartyJunk" IsChecked="True">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel><TextBlock Text="14. Dọn Cache App Bên Thứ 3 (Discord, VSCode...)" FontWeight="Bold"/><TextBlock Text="Tự động phát hiện &amp; dọn cache của mọi ứng dụng bên thứ 3." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap"/></StackPanel>
+                                        <Border Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="6,2" VerticalAlignment="Top"><TextBlock Text="-ThirdPartyJunk" FontSize="10" Foreground="#38BDF8"/></Border>
+                                    </Grid>
+                                </CheckBox>
+
+                                <CheckBox x:Name="chk_CleanRegistry" IsChecked="True">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel><TextBlock Text="15. Dọn Registry Mồ Côi An Toàn (Backup .REG)" FontWeight="Bold"/><TextBlock Text="Dọn sạch MuiCache rác, RunMRU &amp; file association gãy." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap"/></StackPanel>
+                                        <Border Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="6,2" VerticalAlignment="Top"><TextBlock Text="-CleanRegistry" FontSize="10" Foreground="#38BDF8"/></Border>
+                                    </Grid>
+                                </CheckBox>
+
+                                <CheckBox x:Name="chk_AutoMaintenance">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel><TextBlock Text="16. Bật Bảo Trì Tự Động Ngầm (Scheduled Task)" FontWeight="Bold"/><TextBlock Text="Tự động tối ưu ngầm hàng ngày vào lúc 3:00 AM hoặc khi máy rảnh (Idle)." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap"/></StackPanel>
+                                        <Border Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="6,2" VerticalAlignment="Top"><TextBlock Text="-AutoMaintenance" FontSize="10" Foreground="#38BDF8"/></Border>
+                                    </Grid>
+                                </CheckBox>
+
+                                <CheckBox x:Name="chk_ForceCleanShadows">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                        <StackPanel><TextBlock Text="17. Dọn VSS Shadow Copies (Giải phóng 10-50GB đĩa C:)" FontWeight="Bold" Foreground="#F59E0B"/><TextBlock Text="Xóa các bản sao lưu Shadow Copies dư thừa của Windows Update/System Restore." FontSize="11" Foreground="#94A3B8" TextWrapping="Wrap"/></StackPanel>
+                                        <Border Grid.Column="1" Background="#1E293B" CornerRadius="4" Padding="6,2" VerticalAlignment="Top"><TextBlock Text="-ForceCleanShadows" FontSize="10" Foreground="#F59E0B"/></Border>
+                                    </Grid>
+                                </CheckBox>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- COLUMN 2: Selective Toggles (6 Radio Groups) -->
+                    <Border Grid.Column="1" Style="{StaticResource GlassCard}">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,14">
+                                <TextBlock Text="⚙️ CỘT 2: TINH CHỈNH TÙY CHỌN (BẬT / TẮT THEO NHU CẦU)" FontSize="13" FontWeight="Bold" Foreground="#F59E0B"/>
+                                <Border Background="#78350F" CornerRadius="6" Padding="8,3" HorizontalAlignment="Right">
+                                    <TextBlock Text="SELECTIVE TOGGLES" FontSize="10" FontWeight="Bold" Foreground="#FDE047"/>
+                                </Border>
+                            </Grid>
+
+                            <StackPanel x:Name="Col2RadioGroups">
+                                <!-- Group 1: VBS -->
+                                <Border Background="#0F172A" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <TextBlock Text="🛡️ VBS / Core Isolation (Memory Integrity)" FontWeight="Bold" Foreground="#F8FAFC"/>
+                                        <TextBlock Text="Tắt giúp tăng 5-15% FPS game, Bật để giữ bảo mật nhân Windows" FontSize="11" Foreground="#94A3B8" Margin="0,2,0,8"/>
+                                        <StackPanel Orientation="Horizontal">
+                                            <RadioButton x:Name="vbs_disable" GroupName="opt_vbs" Content="Tắt VBS (Ưu tiên FPS Gaming)" IsChecked="True"/>
+                                            <RadioButton x:Name="vbs_enable" GroupName="opt_vbs" Content="Bật VBS (Ưu tiên Bảo mật)"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Group 2: Power Plan -->
+                                <Border Background="#0F172A" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <TextBlock Text="⚡ Chế độ Điện năng CPU (Power Plan)" FontWeight="Bold" Foreground="#F8FAFC"/>
+                                        <TextBlock Text="PC nên dùng Ultimate, Laptop nên chọn Balanced để không bị nóng/hao pin" FontSize="11" Foreground="#94A3B8" Margin="0,2,0,8"/>
+                                        <StackPanel Orientation="Horizontal">
+                                            <RadioButton x:Name="power_ultimate" GroupName="opt_power" Content="Ultimate Performance (Cho PC)" IsChecked="True"/>
+                                            <RadioButton x:Name="power_balanced" GroupName="opt_power" Content="Balanced (Cho Laptop / Tiết kiệm điện)"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Group 3: Hibernation -->
+                                <Border Background="#0F172A" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <TextBlock Text="💤 Hibernation &amp; Fast Startup (Chế độ Ngủ đông)" FontWeight="Bold" Foreground="#F8FAFC"/>
+                                        <TextBlock Text="Tắt giúp thu hồi 15-32GB SSD, Bật nếu cần dùng Sleep/Fast Startup trên Laptop" FontSize="11" Foreground="#94A3B8" Margin="0,2,0,8"/>
+                                        <StackPanel Orientation="Horizontal">
+                                            <RadioButton x:Name="hiber_disable" GroupName="opt_hiber" Content="Tắt Hibernation (Thu hồi 15-32GB SSD)" IsChecked="True"/>
+                                            <RadioButton x:Name="hiber_enable" GroupName="opt_hiber" Content="Bật Hibernation (Giữ Ngủ đông/Fast Boot)"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Group 4: Windows Search -->
+                                <Border Background="#0F172A" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <TextBlock Text="🔍 Dịch vụ Tìm kiếm Windows (`WSearch`)" FontWeight="Bold" Foreground="#F8FAFC"/>
+                                        <TextBlock Text="Tắt giúp bớt ghi đĩa C:, Bật nếu hay gõ tìm file trong Explorer" FontSize="11" Foreground="#94A3B8" Margin="0,2,0,8"/>
+                                        <StackPanel Orientation="Horizontal">
+                                            <RadioButton x:Name="search_disable" GroupName="opt_search" Content="Tắt Windows Search (Giảm tải CPU/SSD)"/>
+                                            <RadioButton x:Name="search_enable" GroupName="opt_search" Content="Giữ / Bật Windows Search" IsChecked="True"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Group 5: Print Spooler -->
+                                <Border Background="#0F172A" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <TextBlock Text="🖨️ Dịch vụ In ấn (`Spooler`)" FontWeight="Bold" Foreground="#F8FAFC"/>
+                                        <TextBlock Text="Tắt nếu không dùng máy in, Bật nếu máy có kết nối máy in" FontSize="11" Foreground="#94A3B8" Margin="0,2,0,8"/>
+                                        <StackPanel Orientation="Horizontal">
+                                            <RadioButton x:Name="spooler_disable" GroupName="opt_spooler" Content="Tắt Print Spooler"/>
+                                            <RadioButton x:Name="spooler_enable" GroupName="opt_spooler" Content="Giữ / Bật Print Spooler (Máy in)" IsChecked="True"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+
+                                <!-- Group 6: SysMain -->
+                                <Border Background="#0F172A" BorderBrush="#1E293B" BorderThickness="1" CornerRadius="10" Padding="12" Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <TextBlock Text="🧠 Dịch vụ SysMain (Superfetch)" FontWeight="Bold" Foreground="#F8FAFC"/>
+                                        <TextBlock Text="Tắt rất tốt cho SSD (giảm ghi đĩa), nên giữ nếu dùng HDD quay" FontSize="11" Foreground="#94A3B8" Margin="0,2,0,8"/>
+                                        <StackPanel Orientation="Horizontal">
+                                            <RadioButton x:Name="sysmain_disable" GroupName="opt_sysmain" Content="Tắt SysMain (Khuyên dùng cho SSD)" IsChecked="True"/>
+                                            <RadioButton x:Name="sysmain_enable" GroupName="opt_sysmain" Content="Giữ / Bật SysMain"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- 5.5 Quick Native Engine Actions Bar -->
+                <Border Grid.Row="5" Style="{StaticResource GlassCard}" Margin="0,0,0,18" Padding="12" BorderBrush="#0EA5E9">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="⚡ NATIVE TOOLS:" FontSize="12" FontWeight="Bold" Foreground="#38BDF8" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                        <Button x:Name="BtnTrimRamQuick" Grid.Column="1" Content="🧠 Xả RAM Kernel" Style="{StaticResource BtnOutline}" Click="BtnTrimRamQuick_Click" Margin="0,0,6,0"/>
+                        <Button x:Name="BtnCleanRegistryQuick" Grid.Column="2" Content="🛡️ Safe Registry" Style="{StaticResource BtnOutline}" Click="BtnCleanRegistryQuick_Click" Margin="0,0,6,0"/>
+                        <Button x:Name="BtnCleanBrowserQuick" Grid.Column="3" Content="🌐 Vacuum Browsers" Style="{StaticResource BtnOutline}" Click="BtnCleanBrowserQuick_Click" Margin="0,0,6,0"/>
+                        <Button x:Name="BtnOpenStartupModal" Grid.Column="4" Content="⚡ Quản Lý Startup" Style="{StaticResource BtnOutline}" Click="BtnOpenStartupModal_Click" Margin="0,0,6,0"/>
+                        <Button x:Name="BtnOpenDebloatModal" Grid.Column="5" Content="🛡️ Win 11 Debloater" Style="{StaticResource BtnOutline}" Click="BtnOpenDebloatModal_Click" Margin="0,0,6,0"/>
+                        <Button x:Name="BtnOpenShredModal" Grid.Column="6" Content="🔒 Secure Shredder" Style="{StaticResource BtnOutline}" Click="BtnOpenShredModal_Click"/>
+                    </Grid>
+                </Border>
+
+                <!-- 6. Bottom Action Panel -->
+                <Border Grid.Row="6" Style="{StaticResource GlassCard}" Margin="0,0,0,18" Padding="12">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Button x:Name="BtnExecuteCustom" Grid.Column="0" Content="🚀 THỰC THI TỐI ƯU CÁC MỤC ĐÃ CHỌN" Style="{StaticResource BtnExecute}" Click="BtnExecuteCustom_Click" Margin="0,0,10,0"/>
+
+                        <CheckBox x:Name="chk_DryRun" Grid.Column="1" Content="🧪 Chế độ Mô phỏng (Dry-Run Mode)" Foreground="#F59E0B" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,10,0"/>
+
+                        <Button x:Name="BtnAutostartToggle" Grid.Column="2" Content="⚡ Tự Động Khởi Động: Đang kiểm tra..." Style="{StaticResource BtnOutline}" Click="BtnAutostartToggle_Click" Margin="0,0,10,0"/>
+
+                        <!-- Rollback ID Bar -->
+                        <StackPanel Orientation="Horizontal" Grid.Column="3" Margin="0,0,10,0">
+                            <ComboBox x:Name="CboBackups" Width="220" Height="32" Background="#1E293B" Foreground="#F8FAFC" 
+                                      BorderBrush="#334155" Margin="0,0,6,0" VerticalContentAlignment="Center"
+                                      DisplayMemberPath="DisplayText" SelectedValuePath="BackupId"/>
+                            <Button x:Name="BtnRollback" Content="↩️ Rollback" Style="{StaticResource BtnOutline}" Click="BtnRollback_Click"/>
+                        </StackPanel>
+
+                        <Button x:Name="BtnRestorePoint" Grid.Column="4" Content="🛡️ Tạo Điểm Khôi Phục" Style="{StaticResource BtnOutline}" Click="BtnRestorePoint_Click" Margin="0,0,10,0"/>
+
+                        <Button x:Name="BtnRevert" Grid.Column="5" Content="🔄 Khôi Phục Mặc Định" Style="{StaticResource BtnOutline}" Click="BtnRevert_Click"/>
+                    </Grid>
+                </Border>
+
+                <!-- 7. Log Console -->
+                <Border Grid.Row="7" Style="{StaticResource GlassCard}" Padding="12">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto"/>
+                            <RowDefinition Height="200"/>
+                        </Grid.RowDefinitions>
+
+                        <Grid Grid.Row="0" Margin="0,0,0,8">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="💻 MÀN_HÌNH_NHẬT_KÝ_HỆ_THỐNG" FontSize="12" FontWeight="Bold" Foreground="#38BDF8"/>
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <Button Content="🗑️ XÓA LOG" Click="BtnClearLog_Click" Background="Transparent" Foreground="#94A3B8" BorderThickness="0" FontSize="11" FontWeight="Bold" Cursor="Hand" Margin="0,0,16,0"/>
+                                <TextBlock x:Name="TxtLogTime" Text="THỜI GIAN: --:--:--" FontSize="11" Foreground="#64748B" FontFamily="Consolas, Cascadia Code"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <TextBox x:Name="TxtOutput" Grid.Row="1" Background="#020617" Foreground="#38BDF8" 
+                                 FontFamily="Consolas, Cascadia Code, Courier New" FontSize="12" BorderThickness="1" BorderBrush="#1E293B" 
+                                 IsReadOnly="True" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" TextWrapping="Wrap" Padding="8"/>
+                    </Grid>
+                </Border>
+            </Grid>
+        </ScrollViewer>
+
+        <!-- 8. Overlay Modal: Startup Items & Windows Services Manager -->
+        <Grid x:Name="ModalStartupOverlay" Background="#CC090D16" Visibility="Collapsed">
+            <Border Style="{StaticResource GlassCard}" Width="960" Height="560" HorizontalAlignment="Center" VerticalAlignment="Center" BorderBrush="#0EA5E9">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                        <TextBlock Text="⚡ BẢNG QUẢN LÝ ỨNG DỤNG KHỞI ĐỘNG &amp; WINDOWS SERVICES" FontSize="16" FontWeight="Bold" Foreground="#38BDF8" VerticalAlignment="Center"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="🔄 Refresh Items" Style="{StaticResource BtnOutline}" Click="BtnRefreshStartup_Click" Margin="0,0,12,0"/>
+                            <Button Content="✕ Đóng" Style="{StaticResource BtnOutline}" Click="BtnCloseStartupModal_Click" Padding="12,6"/>
+                        </StackPanel>
+                    </Grid>
+
+                    <TabControl Grid.Row="1" Background="Transparent" BorderThickness="0" Foreground="#F8FAFC">
+                        <TabItem Header="⚡ ỨNG DỤNG KHỞI ĐỘNG (STARTUP APPS)" Foreground="#38BDF8" FontWeight="Bold">
+                            <DataGrid x:Name="DgStartup" Margin="0,8,0,0">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="180"/>
+                                    <DataGridTextColumn Header="Location" Binding="{Binding Location}" Width="140"/>
+                                    <DataGridTextColumn Header="Rating Risk" Binding="{Binding RiskLevel}" Width="110"/>
+                                    <DataGridTextColumn Header="Command / Target" Binding="{Binding Command}" Width="*"/>
+                                    <DataGridTemplateColumn Header="Status" Width="90">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Text="{Binding IsEnabled, Converter={StaticResource BoolToStatusConverter}}" 
+                                                           Foreground="{Binding IsEnabled, Converter={StaticResource BoolToColorConverter}}" FontWeight="Bold"/>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                    <DataGridTemplateColumn Header="Action" Width="120">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <Button Content="Toggle On/Off" Click="BtnToggleStartup_Click" Tag="{Binding Id}" 
+                                                        Background="#334155" Foreground="White" BorderThickness="0" Padding="8,4" Cursor="Hand"/>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </TabItem>
+
+                        <TabItem Header="🛠️ WINDOWS SERVICES MANAGEMENT" Foreground="#F59E0B" FontWeight="Bold">
+                            <DataGrid x:Name="DgServices" Margin="0,8,0,0">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Service Name" Binding="{Binding ServiceName}" Width="160"/>
+                                    <DataGridTextColumn Header="Display Name" Binding="{Binding DisplayName}" Width="240"/>
+                                    <DataGridTextColumn Header="Start Mode" Binding="{Binding StartMode}" Width="120"/>
+                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100"/>
+                                    <DataGridTemplateColumn Header="Actions (Change Start Mode)" Width="280">
+                                        <DataGridTemplateColumn.CellTemplate>
+                                            <DataTemplate>
+                                                <StackPanel Orientation="Horizontal">
+                                                    <Button Content="Auto (2)" Click="BtnSetServiceAuto_Click" Tag="{Binding ServiceName}" Background="#10B981" Foreground="White" BorderThickness="0" Padding="6,3" Margin="0,0,4,0" Cursor="Hand"/>
+                                                    <Button Content="Manual (3)" Click="BtnSetServiceManual_Click" Tag="{Binding ServiceName}" Background="#0EA5E9" Foreground="White" BorderThickness="0" Padding="6,3" Margin="0,0,4,0" Cursor="Hand"/>
+                                                    <Button Content="Disabled (4)" Click="BtnSetServiceDisabled_Click" Tag="{Binding ServiceName}" Background="#EF4444" Foreground="White" BorderThickness="0" Padding="6,3" Cursor="Hand"/>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </DataGridTemplateColumn.CellTemplate>
+                                    </DataGridTemplateColumn>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </TabItem>
+                    </TabControl>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- 9. Overlay Modal: Windows Debloater & Tweak Engine -->
+        <Grid x:Name="ModalDebloatOverlay" Background="#CC090D16" Visibility="Collapsed">
+            <Border Style="{StaticResource GlassCard}" Width="920" Height="540" HorizontalAlignment="Center" VerticalAlignment="Center" BorderBrush="#38BDF8">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0" Margin="0,0,0,12">
+                        <TextBlock Text="🛡️ WINDOWS 10/11 DEBLOATER &amp; OPTIMIZATION SUITE" FontSize="16" FontWeight="Bold" Foreground="#38BDF8" VerticalAlignment="Center"/>
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="🔄 Load Debloat List" Style="{StaticResource BtnOutline}" Click="BtnRefreshDebloat_Click" Margin="0,0,12,0"/>
+                            <Button Content="✕ Đóng" Style="{StaticResource BtnOutline}" Click="BtnCloseDebloatModal_Click" Padding="12,6"/>
+                        </StackPanel>
+                    </Grid>
+                    <DataGrid x:Name="DgDebloat" Grid.Row="1">
+                        <DataGrid.Columns>
+                            <DataGridCheckBoxColumn Header="Chọn" Binding="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="60"/>
+                            <DataGridTextColumn Header="Phân Loại" Binding="{Binding Category}" Width="140"/>
+                            <DataGridTextColumn Header="Tên Mục Tinh Chỉnh" Binding="{Binding Name}" Width="240"/>
+                            <DataGridTextColumn Header="Mô Tả Chi Tiết" Binding="{Binding Description}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <Grid Grid.Row="2" Margin="0,12,0,0">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button x:Name="BtnApplyDebloat" Content="🚀 ÁP DỤNG DEBLOAT VÀ TINH CHỈNH ĐÃ CHỌN" Style="{StaticResource BtnExecute}" Click="BtnApplyDebloat_Click"/>
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- 10. Overlay Modal: Secure File Shredder Tool -->
+        <Grid x:Name="ModalShredOverlay" Background="#CC090D16" Visibility="Collapsed">
+            <Border Style="{StaticResource GlassCard}" Width="750" Height="420" HorizontalAlignment="Center" VerticalAlignment="Center" BorderBrush="#EF4444">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <Grid Grid.Row="0" Margin="0,0,0,16">
+                        <TextBlock Text="🔒 SECURE FILE SHREDDER (XÓA ĐÈ CHỐNG KHÔI PHỤC)" FontSize="16" FontWeight="Bold" Foreground="#EF4444" VerticalAlignment="Center"/>
+                        <Button Content="✕ Đóng" Style="{StaticResource BtnOutline}" Click="BtnCloseShredModal_Click" HorizontalAlignment="Right" Padding="12,6"/>
+                    </Grid>
+
+                    <StackPanel Grid.Row="1">
+                        <TextBlock Text="Đường Dẫn Tệp Hoặc Thư Mục Cần Tiêu Hủy:" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,8"/>
+                        <Grid Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <Border Background="#1E293B" CornerRadius="8" Padding="10,6" BorderBrush="#334155" BorderThickness="1">
+                                <TextBox x:Name="TxtShredTargetPath" Background="Transparent" Foreground="White" BorderThickness="0" VerticalContentAlignment="Center" Text="C:\Path\To\File_Or_Folder..."/>
+                            </Border>
+                        </Grid>
+
+                        <TextBlock Text="Chọn Thuật Toán Xóa Đè Dữ Liệu An Toàn:" FontWeight="Bold" Foreground="#F8FAFC" Margin="0,0,0,8"/>
+                        <StackPanel Orientation="Vertical" Margin="0,0,0,16">
+                            <RadioButton x:Name="rb_ShredDoD" GroupName="shred_algo" Content="DoD 5220.22-M (3-Passes: Zeros -> Ones -> Pseudo-Random)" IsChecked="True" Margin="0,0,0,8"/>
+                            <RadioButton x:Name="rb_ShredRandom" GroupName="shred_algo" Content="Random Fill (1-Pass: Ghi đè chuỗi ngẫu nhiên)" Margin="0,0,0,8"/>
+                            <RadioButton x:Name="rb_ShredZero" GroupName="shred_algo" Content="Zero Fill (1-Pass: Ghi đè 0x00 siêu tốc)"/>
+                        </StackPanel>
+
+                        <TextBlock Text="⚠️ CẢNH BÁO: Dữ liệu sau khi bị Shred sẽ bị xóa đè trực tiếp trên các sector ổ đĩa và KHÔNG THỂ KHÔI PHỤC bằng bất kỳ phần mềm cứu dữ liệu nào!" FontSize="11" Foreground="#F59E0B" TextWrapping="Wrap"/>
+                    </StackPanel>
+
+                    <Grid Grid.Row="2" Margin="0,16,0,0">
+                        <Button x:Name="BtnExecuteShred" Content="🔥 BẮT ĐẦU TIÊU HỦY DỮ LIỆU AN TOÀN" Style="{StaticResource BtnExecute}" Background="#EF4444" Click="BtnExecuteShred_Click" HorizontalAlignment="Right"/>
+                    </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>

@@ -1,0 +1,294 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.ServiceProcess;
+using System.Text.Json;
+using Microsoft.Win32;
+using Optimax.IPC;
+
+namespace Optimax.Core
+{
+    public class TransactionalRollbackManager
+    {
+        private readonly string _backupRoot;
+
+        [DllImport("advapi32.dll", EntryPoint = "OpenSCManagerW", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr OpenSCManager(string? machineName, string? databaseName, uint dwDesiredAccess);
+
+        [DllImport("advapi32.dll", EntryPoint = "OpenServiceW", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern IntPtr OpenService(IntPtr hSCManager, string serviceName, uint dwDesiredAccess);
+
+        [DllImport("advapi32.dll", EntryPoint = "ChangeServiceConfigW", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool ChangeServiceConfig(
+            IntPtr hService,
+            uint dwServiceType,
+            uint dwStartType,
+            uint dwErrorControl,
+            string? binaryPathName,
+            string? loadOrderGroup,
+            IntPtr tagId,
+            string? dependencies,
+            string? serviceStartName,
+            string? password,
+            string? displayName);
+
+        [DllImport("advapi32.dll", EntryPoint = "ControlService", ExactSpelling = true, SetLastError = true)]
+        private static extern bool ControlService(IntPtr hService, uint dwControl, ref SERVICE_STATUS lpServiceStatus);
+
+        [DllImport("advapi32.dll", EntryPoint = "StartServiceW", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool StartService(IntPtr hService, uint dwNumServiceArgs, IntPtr lpServiceArgVectors);
+
+        [DllImport("advapi32.dll", EntryPoint = "CloseServiceHandle", ExactSpelling = true, SetLastError = true)]
+        private static extern bool CloseServiceHandle(IntPtr hSCObject);
+
+        private const uint SC_MANAGER_ALL_ACCESS = 0xF003F;
+        private const uint SERVICE_ALL_ACCESS = 0xF01FF;
+        private const uint SERVICE_NO_CHANGE = 0xFFFFFFFF;
+        private const uint SERVICE_CONTROL_STOP = 0x00000001;
+
+        private const uint SERVICE_AUTO_START = 0x00000002;
+        private const uint SERVICE_DEMAND_START = 0x00000003;
+        private const uint SERVICE_DISABLED = 0x00000004;
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SERVICE_STATUS
+        {
+            public uint dwServiceType;
+            public uint dwCurrentState;
+            public uint dwControlsAccepted;
+            public uint dwWin32ExitCode;
+            public uint dwServiceSpecificExitCode;
+            public uint dwCheckPoint;
+            public uint dwWaitHint;
+        }
+
+        public TransactionalRollbackManager()
+        {
+            _backupRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Optimax", "Backups");
+            Directory.CreateDirectory(_backupRoot);
+        }
+
+        public SystemStateBackupPackage CreatePackage() => new SystemStateBackupPackage();
+
+        public void SnapshotRegistryKey(SystemStateBackupPackage package, RegistryKey rootKey, string subKeyPath, string valueName)
+        {
+            using var key = rootKey.OpenSubKey(subKeyPath, writable: false);
+            var snapshot = new RegistryStateSnapshot
+            {
+                KeyPath = $"{rootKey.Name}\\{subKeyPath}",
+                ValueName = valueName
+            };
+
+            if (key != null)
+            {
+                var val = key.GetValue(valueName, null, RegistryValueOptions.DoNotExpandEnvironmentNames);
+                if (val != null)
+                {
+                    snapshot.Existed = true;
+                    snapshot.OriginalValue = val;
+                    snapshot.ValueKind = key.GetValueKind(valueName);
+                }
+            }
+            package.RegistryEntries.Add(snapshot);
+        }
+
+        public void SnapshotService(SystemStateBackupPackage package, string serviceName)
+        {
+            try
+            {
+                using var sc = new ServiceController(serviceName);
+                package.ServiceEntries.Add(new ServiceStateSnapshot
+                {
+                    ServiceName = serviceName,
+                    OriginalStartMode = (int)sc.StartType,
+                    OriginalStatus = (int)sc.Status
+                });
+            }
+            catch { }
+        }
+
+        public string PersistPackage(SystemStateBackupPackage package)
+        {
+            string packageDir = Path.Combine(_backupRoot, package.BackupId);
+            Directory.CreateDirectory(packageDir);
+            string jsonPath = Path.Combine(packageDir, "snapshot.json");
+
+            string json = JsonSerializer.Serialize(package, OptimaxJsonContext.Default.SystemStateBackupPackage);
+            File.WriteAllText(jsonPath, json);
+            return package.BackupId;
+        }
+
+        public bool ExecuteRollback(string backupId)
+        {
+            string jsonPath = Path.Combine(_backupRoot, backupId, "snapshot.json");
+            if (!File.Exists(jsonPath)) return false;
+
+            var package = JsonSerializer.Deserialize(File.ReadAllText(jsonPath), OptimaxJsonContext.Default.SystemStateBackupPackage);
+            if (package == null) return false;
+
+            // 1. Restore Registry Entries
+            foreach (var reg in package.RegistryEntries)
+            {
+                try
+                {
+                    string[] parts = reg.KeyPath.Split('\\', 2);
+                    RegistryKey root = parts[0] switch
+                    {
+                        "HKEY_LOCAL_MACHINE" => Registry.LocalMachine,
+                        "HKEY_CURRENT_USER" => Registry.CurrentUser,
+                        _ => Registry.LocalMachine
+                    };
+
+                    if (reg.Existed)
+                    {
+                        using var key = root.CreateSubKey(parts[1], writable: true);
+                        if (reg.OriginalValue != null)
+                        {
+                            if (reg.OriginalValue is JsonElement elem)
+                            {
+                                if (elem.ValueKind == JsonValueKind.Number && elem.TryGetInt32(out int intVal))
+                                {
+                                    key.SetValue(reg.ValueName, intVal, reg.ValueKind);
+                                }
+                                else
+                                {
+                                    key.SetValue(reg.ValueName, elem.ToString(), reg.ValueKind);
+                                }
+                            }
+                            else
+                            {
+                                key.SetValue(reg.ValueName, reg.OriginalValue, reg.ValueKind);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        using var key = root.OpenSubKey(parts[1], writable: true);
+                        key?.DeleteValue(reg.ValueName, false);
+                    }
+                }
+                catch { }
+            }
+
+            // 2. Restore Services via Win32 SCM
+            foreach (var svc in package.ServiceEntries)
+            {
+                try
+                {
+                    RestoreServiceState(svc.ServiceName, (ServiceStartMode)svc.OriginalStartMode, (ServiceControllerStatus)svc.OriginalStatus);
+                }
+                catch { }
+            }
+            return true;
+        }
+
+        private static bool RestoreServiceState(string serviceName, ServiceStartMode startMode, ServiceControllerStatus status)
+        {
+            IntPtr hSCM = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);
+            if (hSCM == IntPtr.Zero) return false;
+
+            try
+            {
+                IntPtr hSvc = OpenService(hSCM, serviceName, SERVICE_ALL_ACCESS);
+                if (hSvc == IntPtr.Zero) return false;
+
+                try
+                {
+                    uint winStartType = startMode switch
+                    {
+                        ServiceStartMode.Automatic => SERVICE_AUTO_START,
+                        ServiceStartMode.Manual => SERVICE_DEMAND_START,
+                        ServiceStartMode.Disabled => SERVICE_DISABLED,
+                        _ => SERVICE_DEMAND_START
+                    };
+
+                    ChangeServiceConfig(hSvc, SERVICE_NO_CHANGE, winStartType, SERVICE_NO_CHANGE, null, null, IntPtr.Zero, null, null, null, null);
+
+                    try
+                    {
+                        using var sc = new ServiceController(serviceName);
+                        if (status == ServiceControllerStatus.Running && sc.Status != ServiceControllerStatus.Running)
+                        {
+                            StartService(hSvc, 0, IntPtr.Zero);
+                        }
+                        else if (status == ServiceControllerStatus.Stopped && sc.Status != ServiceControllerStatus.Stopped)
+                        {
+                            SERVICE_STATUS statusStruct = new SERVICE_STATUS();
+                            ControlService(hSvc, SERVICE_CONTROL_STOP, ref statusStruct);
+                        }
+                    }
+                    catch { }
+
+                    return true;
+                }
+                finally
+                {
+                    CloseServiceHandle(hSvc);
+                }
+            }
+            finally
+            {
+                CloseServiceHandle(hSCM);
+            }
+        }
+
+        public List<BackupItemDto> GetAvailableBackups()
+        {
+            var list = new List<BackupItemDto>();
+            try
+            {
+                if (!Directory.Exists(_backupRoot)) return list;
+
+                foreach (var dir in Directory.GetDirectories(_backupRoot))
+                {
+                    string jsonPath = Path.Combine(dir, "snapshot.json");
+                    if (File.Exists(jsonPath))
+                    {
+                        try
+                        {
+                            string json = File.ReadAllText(jsonPath);
+                            var pkg = JsonSerializer.Deserialize(json, OptimaxJsonContext.Default.SystemStateBackupPackage);
+                            if (pkg != null)
+                            {
+                                list.Add(new BackupItemDto(
+                                    pkg.BackupId,
+                                    pkg.Timestamp,
+                                    pkg.RegistryEntries?.Count ?? 0,
+                                    pkg.ServiceEntries?.Count ?? 0
+                                ));
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch { }
+
+            list.Sort((a, b) => b.Timestamp.CompareTo(a.Timestamp));
+            return list;
+        }
+
+        public string CreateSystemSnapshot()
+        {
+            var pkg = CreatePackage();
+
+            // Snapshot critical system registry keys
+            SnapshotRegistryKey(pkg, Registry.CurrentUser, @"Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU", "");
+            SnapshotRegistryKey(pkg, Registry.LocalMachine, @"SOFTWARE\Policies\Microsoft\Windows\DataCollection", "AllowTelemetry");
+            SnapshotRegistryKey(pkg, Registry.LocalMachine, @"SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot", "TurnOffWindowsCopilot");
+            SnapshotRegistryKey(pkg, Registry.CurrentUser, @"Software\Microsoft\Windows\CurrentVersion\Search", "BingSearchEnabled");
+            SnapshotRegistryKey(pkg, Registry.LocalMachine, @"System\CurrentControlSet\Control\DeviceGuard", "EnableVirtualizationBasedSecurity");
+            SnapshotRegistryKey(pkg, Registry.LocalMachine, @"SOFTWARE\Microsoft\Windows\Dwm", "OverlayTestMode");
+
+            // Snapshot key Windows services
+            SnapshotService(pkg, "WSearch");
+            SnapshotService(pkg, "Spooler");
+            SnapshotService(pkg, "SysMain");
+            SnapshotService(pkg, "DiagTrack");
+            SnapshotService(pkg, "dmwappushservice");
+
+            return PersistPackage(pkg);
+        }
+    }
+}
