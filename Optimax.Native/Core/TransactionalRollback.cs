@@ -290,5 +290,21 @@ namespace Optimax.Core
 
             return PersistPackage(pkg);
         }
+
+        public bool DeleteBackup(string backupId)
+        {
+            if (string.IsNullOrWhiteSpace(backupId)) return false;
+            try
+            {
+                string dir = Path.Combine(_backupRoot, backupId);
+                if (Directory.Exists(dir))
+                {
+                    Directory.Delete(dir, true);
+                    return true;
+                }
+            }
+            catch { }
+            return false;
+        }
     }
 }

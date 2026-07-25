@@ -651,10 +651,35 @@
 
                         <!-- Rollback ID Bar -->
                         <StackPanel Orientation="Horizontal" Grid.Column="3" Margin="0,0,10,0">
-                            <ComboBox x:Name="CboBackups" Width="220" Height="32" Background="#1E293B" Foreground="#F8FAFC" 
+                            <ComboBox x:Name="CboBackups" Width="230" Height="32" Background="#1E293B" Foreground="#F8FAFC" 
                                       BorderBrush="#334155" Margin="0,0,6,0" VerticalContentAlignment="Center"
-                                      DisplayMemberPath="DisplayText" SelectedValuePath="BackupId"/>
-                            <Button x:Name="BtnRollback" Content="↩️ Rollback" Style="{StaticResource BtnOutline}" Click="BtnRollback_Click"/>
+                                      DisplayMemberPath="DisplayText" SelectedValuePath="BackupId">
+                                <ComboBox.Resources>
+                                    <SolidColorBrush x:Key="{x:Static SystemColors.WindowBrushKey}" Color="#1E293B" />
+                                    <SolidColorBrush x:Key="{x:Static SystemColors.WindowTextBrushKey}" Color="#F8FAFC" />
+                                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightBrushKey}" Color="#0EA5E9" />
+                                    <SolidColorBrush x:Key="{x:Static SystemColors.HighlightTextBrushKey}" Color="#FFFFFF" />
+                                </ComboBox.Resources>
+                                <ComboBox.ItemContainerStyle>
+                                    <Style TargetType="ComboBoxItem">
+                                        <Setter Property="Background" Value="#1E293B"/>
+                                        <Setter Property="Foreground" Value="#F8FAFC"/>
+                                        <Setter Property="Padding" Value="6,4"/>
+                                        <Style.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter Property="Background" Value="#0EA5E9"/>
+                                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                                            </Trigger>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter Property="Background" Value="#0284C7"/>
+                                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                                            </Trigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ComboBox.ItemContainerStyle>
+                            </ComboBox>
+                            <Button x:Name="BtnRollback" Content="↩️ Rollback" Style="{StaticResource BtnOutline}" Click="BtnRollback_Click" Margin="0,0,6,0"/>
+                            <Button x:Name="BtnDeleteBackup" Content="🗑️ Xóa" Style="{StaticResource BtnOutline}" Click="BtnDeleteBackup_Click" Foreground="#EF4444" BorderBrush="#991B1B"/>
                         </StackPanel>
 
                         <Button x:Name="BtnRestorePoint" Grid.Column="4" Content="🛡️ Tạo Điểm Khôi Phục" Style="{StaticResource BtnOutline}" Click="BtnRestorePoint_Click" Margin="0,0,10,0"/>

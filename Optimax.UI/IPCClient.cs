@@ -152,6 +152,7 @@ namespace Optimax.UI
                     "get-backups" => "--get-backups",
                     "create-snapshot" => "--create-snapshot",
                     "rollback" => $"--rollback {backupId}",
+                    "delete-backup" => $"--delete-backup {backupId}",
                     _ => flagsArg
                 };
 
@@ -160,6 +161,7 @@ namespace Optimax.UI
                     FileName = File.Exists(exePath) ? exePath : "dotnet",
                     Arguments = File.Exists(exePath) ? flag : $"run --project \"{Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "..", "..", "..", "..", "Optimax.Native")}\" -- {flag}",
                     RedirectStandardOutput = true,
+                    StandardOutputEncoding = System.Text.Encoding.UTF8,
                     UseShellExecute = false,
                     CreateNoWindow = true,
                     WindowStyle = ProcessWindowStyle.Hidden
@@ -171,8 +173,32 @@ namespace Optimax.UI
                 string output = await proc.StandardOutput.ReadToEndAsync();
                 await proc.WaitForExitAsync();
 
-                string cleanJson = ExtractJsonFromOutput(output);
-                return new IPCResponse(proc.ExitCode == 0, "CLI Fallback executed", cleanJson);
+                string payloadJson = "";
+                string logText = "";
+
+                int startIdx = output.IndexOf("---PAYLOAD_START---");
+                int endIdx = output.IndexOf("---PAYLOAD_END---");
+
+                if (startIdx >= 0 && endIdx > startIdx)
+                {
+                    logText = output.Substring(0, startIdx).Trim();
+                    payloadJson = output.Substring(startIdx + "---PAYLOAD_START---".Length, endIdx - startIdx - "---PAYLOAD_START---".Length).Trim();
+                }
+                else
+                {
+                    payloadJson = ExtractJsonFromOutput(output);
+                    if (!string.IsNullOrEmpty(payloadJson))
+                    {
+                        int jsonPos = output.IndexOf(payloadJson);
+                        if (jsonPos > 0)
+                        {
+                            logText = output.Substring(0, jsonPos).Trim();
+                        }
+                    }
+                }
+
+                string finalMessage = !string.IsNullOrWhiteSpace(logText) ? logText : "CLI Fallback executed";
+                return new IPCResponse(proc.ExitCode == 0, finalMessage, string.IsNullOrEmpty(payloadJson) ? null : payloadJson);
             }
             catch (Exception ex)
             {
@@ -182,7 +208,7 @@ namespace Optimax.UI
 
         private static string ExtractJsonFromOutput(string rawOutput)
         {
-            if (string.IsNullOrWhiteSpace(rawOutput)) return rawOutput;
+            if (string.IsNullOrWhiteSpace(rawOutput)) return "";
             int firstObj = rawOutput.IndexOf('{');
             int firstArr = rawOutput.IndexOf('[');
 
@@ -201,7 +227,7 @@ namespace Optimax.UI
                     return rawOutput.Substring(start, end - start + 1);
                 }
             }
-            return rawOutput;
+            return "";
         }
     }
 }

@@ -10,6 +10,7 @@ Write-Host "  OPTIMAX NATIVE BUILD & PACKAGING: $ReleaseName" -ForegroundColor Y
 Write-Host "==================================================" -ForegroundColor Cyan
 
 # 0. Stop any running instances of Optimax
+cmd.exe /c "taskkill /F /IM Optimax.exe /T 2>nul & taskkill /F /IM Optimax.UI.exe /T 2>nul & exit 0"
 Get-Process -Name Optimax, Optimax.UI -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Milliseconds 500
 

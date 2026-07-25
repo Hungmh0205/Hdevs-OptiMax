@@ -16,6 +16,13 @@ namespace Optimax
 
         private static async Task<int> Main(string[] args)
         {
+            try
+            {
+                Console.OutputEncoding = System.Text.Encoding.UTF8;
+                Console.InputEncoding = System.Text.Encoding.UTF8;
+            }
+            catch { }
+
             bool isDryRun = false;
             string? rollbackId = null;
             string rulesFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "rules", "custom_rules.json");
@@ -41,6 +48,7 @@ namespace Optimax
 
             bool isGetBackups = false;
             bool isCreateSnapshot = false;
+            string? deleteBackupId = null;
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -67,6 +75,10 @@ namespace Optimax
                 else if (arg == "--create-snapshot")
                 {
                     isCreateSnapshot = true;
+                }
+                else if (arg == "--delete-backup" && i + 1 < args.Length)
+                {
+                    deleteBackupId = args[++i];
                 }
                 else if (arg == "--import-winapp2" && i + 1 < args.Length)
                 {
@@ -222,7 +234,9 @@ namespace Optimax
                 Console.WriteLine("[OPTIMAX NATIVE] Executing Kernel Memory Trimming & Standby List Purge...");
                 var trimReport = KernelMemoryTrimmer.TrimSystemMemory();
                 string json = JsonSerializer.Serialize(trimReport, OptimaxJsonContext.Default.MemoryTrimReport);
+                Console.WriteLine("---PAYLOAD_START---");
                 Console.WriteLine(json);
+                Console.WriteLine("---PAYLOAD_END---");
                 return 0;
             }
 
@@ -243,8 +257,11 @@ namespace Optimax
                 Console.WriteLine($"[OPTIMAX NATIVE] Executing Deep Safe Registry Scan (Dry-Run = {isDryRun})...");
                 var regScanner = new DeepRegistryScanner();
                 var regReport = regScanner.ScanAndClean(isDryRun);
+                Console.WriteLine($"[OPTIMAX NATIVE] Đã dọn dẹp {regReport.TotalIssuesFound} mục Registry mồ côi.");
                 string json = JsonSerializer.Serialize(regReport, OptimaxJsonContext.Default.RegistryScanReport);
+                Console.WriteLine("---PAYLOAD_START---");
                 Console.WriteLine(json);
+                Console.WriteLine("---PAYLOAD_END---");
                 return 0;
             }
 
@@ -254,8 +271,11 @@ namespace Optimax
                 Console.WriteLine($"[OPTIMAX NATIVE] Executing Browser SQLite Optimization (Dry-Run = {isDryRun})...");
                 var bEngine = new BrowserOptimizer();
                 var bReport = bEngine.OptimizeAllBrowsers(isDryRun);
+                Console.WriteLine($"[OPTIMAX NATIVE] Đã tối ưu {bReport.TotalBytesReclaimed / 1024} KB trên {bReport.TotalDatabasesScanned} cơ sở dữ liệu trình duyệt.");
                 string json = JsonSerializer.Serialize(bReport, OptimaxJsonContext.Default.BrowserScanReport);
+                Console.WriteLine("---PAYLOAD_START---");
                 Console.WriteLine(json);
+                Console.WriteLine("---PAYLOAD_END---");
                 return 0;
             }
 
@@ -326,6 +346,21 @@ namespace Optimax
                     Console.Error.WriteLine("[OPTIMAX NATIVE] Rollback failed or snapshot not found.");
                     return 1;
                 }
+            }
+
+            if (!string.IsNullOrEmpty(deleteBackupId))
+            {
+                var rollbackMgr = new TransactionalRollbackManager();
+                bool ok = rollbackMgr.DeleteBackup(deleteBackupId);
+                if (ok)
+                {
+                    Console.WriteLine($"[OPTIMAX NATIVE] Đã xóa thành công bản sao lưu Snapshot ID [{deleteBackupId}].");
+                }
+                else
+                {
+                    Console.WriteLine($"[OPTIMAX NATIVE] Bản sao lưu Snapshot ID [{deleteBackupId}] không tồn tại hoặc đã được xóa trước đó.");
+                }
+                return 0;
             }
 
             // 10. Named Pipe Service Mode
@@ -475,6 +510,12 @@ namespace Optimax
                         bool ok = rollbackMgr.ExecuteRollback(req.BackupId);
                         return new IPCResponse(ok, ok ? "Rollback succeeded" : "Rollback failed", null);
                     }
+                    else if (req.Command == "delete-backup" && !string.IsNullOrEmpty(req.BackupId))
+                    {
+                        var rollbackMgr = new TransactionalRollbackManager();
+                        bool ok = rollbackMgr.DeleteBackup(req.BackupId);
+                        return new IPCResponse(true, ok ? $"Đã xóa thành công Snapshot ID [{req.BackupId}]" : $"Snapshot ID [{req.BackupId}] đã được xóa trước đó", null);
+                    }
                     else if (req.Command == "get-stats")
                     {
                         var stats = GetSystemStats();
@@ -494,14 +535,20 @@ namespace Optimax
                 var tweakRes = tweaksEngine.ExecuteTweaks(cliFlags.ToArray());
                 if (tweakRes.TotalApplied > 0)
                 {
-                    Console.WriteLine($"[OPTIMAX NATIVE] Applied {tweakRes.TotalApplied} system tweaks: {string.Join(", ", tweakRes.Messages)}");
+                    Console.WriteLine($"[OPTIMAX NATIVE] Đã áp dụng {tweakRes.TotalApplied} tinh chỉnh hệ thống:");
+                    foreach (var msg in tweakRes.Messages)
+                    {
+                        Console.WriteLine($" [✓] {msg}");
+                    }
                 }
             }
 
             var scanReport = await PerformScanAsync(isDryRun, rulesFile);
 
             string jsonReport = JsonSerializer.Serialize(scanReport, OptimaxJsonContext.Default.ScanReport);
+            Console.WriteLine("---PAYLOAD_START---");
             Console.WriteLine(jsonReport);
+            Console.WriteLine("---PAYLOAD_END---");
 
             return 0;
         }

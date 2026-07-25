@@ -120,20 +120,24 @@ namespace Optimax.UI
                 if (res.Success && !string.IsNullOrEmpty(res.PayloadJson))
                 {
                     var backups = JsonSerializer.Deserialize(res.PayloadJson, OptimaxJsonContext.Default.ListBackupItemDto);
-                    if (backups != null && backups.Count > 0)
+                    if (CboBackups != null)
                     {
-                        var displayList = backups.Select(b => new BackupDisplayItem
+                        if (backups != null && backups.Count > 0)
                         {
-                            BackupId = b.BackupId,
-                            Timestamp = b.Timestamp,
-                            RegistryCount = b.RegistryCount,
-                            ServiceCount = b.ServiceCount
-                        }).ToList();
+                            var displayList = backups.Select(b => new BackupDisplayItem
+                            {
+                                BackupId = b.BackupId,
+                                Timestamp = b.Timestamp,
+                                RegistryCount = b.RegistryCount,
+                                ServiceCount = b.ServiceCount
+                            }).ToList();
 
-                        if (CboBackups != null)
-                        {
                             CboBackups.ItemsSource = displayList;
                             CboBackups.SelectedIndex = 0;
+                        }
+                        else
+                        {
+                            CboBackups.ItemsSource = null;
                         }
                     }
                 }
@@ -621,6 +625,37 @@ namespace Optimax.UI
             }
         }
 
+        private async void BtnDeleteBackup_Click(object sender, RoutedEventArgs e)
+        {
+            string? backupId = CboBackups?.SelectedValue?.ToString();
+            if (string.IsNullOrEmpty(backupId))
+            {
+                MessageBox.Show("Vui lòng chọn một mã Snapshot sao lưu từ danh sách để xóa!", "Xóa Snapshot", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var confirm = MessageBox.Show($"Bạn có chắc chắn muốn XÓA VĨNH VIỄN bản sao lưu Snapshot ID [{backupId}]?", "Xác Nhận Xóa Snapshot", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (confirm == MessageBoxResult.Yes)
+            {
+                SetUiBusy(true, $"Đang xóa Snapshot ID [{backupId}]");
+                try
+                {
+                    Log($"ĐANG XÓA SNAPSHOT HỆ THỐNG MÃ ID [{backupId}]...", "warn");
+                    var res = await IpcClient.SendCommandAsync("delete-backup", backupId: backupId);
+                    LogResponse(res);
+                    if (res.Success)
+                    {
+                        Log($"[✓] Đã xóa thành công Snapshot ID: {backupId}", "success");
+                        _ = FetchBackupsAsync();
+                    }
+                }
+                finally
+                {
+                    SetUiBusy(false);
+                }
+            }
+        }
+
         // Toggle Autostart
         private async void BtnAutostartBadge_Click(object sender, RoutedEventArgs e) => ToggleAutostart();
         private async void BtnAutostartToggle_Click(object sender, RoutedEventArgs e) => ToggleAutostart();
@@ -738,6 +773,7 @@ namespace Optimax.UI
             if (BtnApplyDebloat != null) BtnApplyDebloat.IsEnabled = !isBusy;
             if (BtnExecuteShred != null) BtnExecuteShred.IsEnabled = !isBusy;
             if (BtnRollback != null) BtnRollback.IsEnabled = !isBusy;
+            if (BtnDeleteBackup != null) BtnDeleteBackup.IsEnabled = !isBusy;
             if (BtnImportWinapp2 != null) BtnImportWinapp2.IsEnabled = !isBusy;
             if (BtnRestorePoint != null) BtnRestorePoint.IsEnabled = !isBusy;
             if (BtnRevert != null) BtnRevert.IsEnabled = !isBusy;
@@ -771,7 +807,15 @@ namespace Optimax.UI
             if (res.Success)
             {
                 Log("==================================================", "success");
-                Log($"[✓] THỰC THI HOÀN TẤT: {res.Message}", "success");
+                if (!string.IsNullOrEmpty(res.Message))
+                {
+                    var lines = res.Message.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var line in lines)
+                    {
+                        Log(line, "success");
+                    }
+                }
+
                 if (!string.IsNullOrEmpty(res.PayloadJson))
                 {
                     FormatPayloadSummary(res.PayloadJson);
@@ -786,60 +830,75 @@ namespace Optimax.UI
             }
         }
 
+        private bool TryGetProp(JsonElement elem, string name, out JsonElement result)
+        {
+            if (elem.TryGetProperty(name, out result)) return true;
+            if (name.Length > 0)
+            {
+                string lowerName = char.ToLowerInvariant(name[0]) + name.Substring(1);
+                if (elem.TryGetProperty(lowerName, out result)) return true;
+                string upperName = char.ToUpperInvariant(name[0]) + name.Substring(1);
+                if (elem.TryGetProperty(upperName, out result)) return true;
+            }
+            return false;
+        }
+
         private void FormatPayloadSummary(string payloadJson)
         {
+            if (string.IsNullOrWhiteSpace(payloadJson)) return;
+
             try
             {
                 using var doc = JsonDocument.Parse(payloadJson);
                 var root = doc.RootElement;
 
                 // 1. MemoryTrimReport
-                if (root.TryGetProperty("BytesFreed", out var bytesFreedElem))
+                if (TryGetProp(root, "bytesFreed", out var bytesFreedElem))
                 {
                     long freed = bytesFreedElem.GetInt64();
-                    int procs = root.TryGetProperty("ProcessesTrimmed", out var p) ? p.GetInt32() : 0;
-                    bool standby = root.TryGetProperty("StandbyListFlushed", out var s) && s.GetBoolean();
+                    int procs = TryGetProp(root, "processesTrimmed", out var p) ? p.GetInt32() : 0;
+                    bool standby = TryGetProp(root, "standbyListFlushed", out var s) && s.GetBoolean();
                     Log($" ➔ BÁO CÁO THU HỒI RAM: Đã giải phóng {freed / (1024 * 1024)} MB RAM trên {procs} tiến trình." + (standby ? " Đã xả System Standby List." : ""), "info");
                     return;
                 }
 
                 // 2. BrowserScanReport
-                if (root.TryGetProperty("TotalReclaimedBytes", out var reclaimedElem))
+                if (TryGetProp(root, "totalBytesReclaimed", out var reclaimedElem))
                 {
                     long reclaimed = reclaimedElem.GetInt64();
-                    int scanned = root.TryGetProperty("TotalScanned", out var sc) ? sc.GetInt32() : 0;
+                    int scanned = TryGetProp(root, "totalDatabasesScanned", out var sc) ? sc.GetInt32() : 0;
                     Log($" ➔ BÁO CÁO SQLITE TRÌNH DUYỆT: Đã tối ưu {reclaimed / 1024} KB dung lượng trên {scanned} cơ sở dữ liệu trình duyệt.", "info");
                     return;
                 }
 
                 // 3. RegistryScanReport
-                if (root.TryGetProperty("TotalScanned", out var totalRegElem) && root.TryGetProperty("Items", out _))
+                if (TryGetProp(root, "totalIssuesFound", out var totalRegElem))
                 {
                     int total = totalRegElem.GetInt32();
-                    string? backupId = root.TryGetProperty("BackupId", out var b) ? b.GetString() : null;
+                    string? backupId = TryGetProp(root, "backupId", out var b) ? b.GetString() : null;
                     Log($" ➔ BÁO CÁO REGISTRY: Đã dọn dẹp {total} mục Registry mồ côi." + (!string.IsNullOrEmpty(backupId) ? $" (Mã sao lưu Rollback ID: {backupId})" : ""), "info");
                     return;
                 }
 
                 // 4. DebloatReport
-                if (root.TryGetProperty("TotalApplied", out var debloatAppliedElem))
+                if (TryGetProp(root, "totalApplied", out var debloatAppliedElem))
                 {
                     int total = debloatAppliedElem.GetInt32();
-                    string? backupId = root.TryGetProperty("BackupId", out var b) ? b.GetString() : null;
+                    string? backupId = TryGetProp(root, "backupId", out var b) ? b.GetString() : null;
                     Log($" ➔ BÁO CÁO DEBLOAT WINDOWS: Đã áp dụng {total} tinh chỉnh." + (!string.IsNullOrEmpty(backupId) ? $" (Mã sao lưu Rollback ID: {backupId})" : ""), "info");
                     return;
                 }
 
                 // 5. ScanReport (Dọn Dẹp Rác Ổ Đĩa System Temp)
-                if (root.TryGetProperty("totalFilesFound", out var totalFilesElem))
+                if (TryGetProp(root, "totalFilesFound", out var totalFilesElem))
                 {
                     int totalFiles = totalFilesElem.GetInt32();
-                    long totalBytes = root.TryGetProperty("totalBytesReclaimable", out var b) ? b.GetInt64() : 0;
-                    string risk = root.TryGetProperty("riskLevel", out var r) ? r.GetString() ?? "Medium" : "Medium";
+                    long totalBytes = TryGetProp(root, "totalBytesReclaimable", out var b) ? b.GetInt64() : 0;
+                    string risk = TryGetProp(root, "riskLevel", out var r) ? r.GetString() ?? "Medium" : "Medium";
 
                     Log($" ➔ BÁO CÁO DỌN RÁC Ổ ĐĨA: Đã phát hiện & xử lý {totalFiles} tệp tin rác ({totalBytes / (1024 * 1024)} MB). Mức độ rủi ro: {risk}.", "info");
 
-                    if (root.TryGetProperty("items", out var itemsElem) && itemsElem.ValueKind == JsonValueKind.Array)
+                    if (TryGetProp(root, "items", out var itemsElem) && itemsElem.ValueKind == JsonValueKind.Array)
                     {
                         int count = 0;
                         int totalArrayLength = itemsElem.GetArrayLength();
@@ -850,9 +909,9 @@ namespace Optimax.UI
                                 Log($"    ... và {totalArrayLength - 5} tệp rác hệ thống khác.", "info");
                                 break;
                             }
-                            string path = item.TryGetProperty("path", out var p) ? p.GetString() ?? "" : "";
-                            long size = item.TryGetProperty("sizeBytes", out var s) ? s.GetInt64() : 0;
-                            string action = item.TryGetProperty("actionRequired", out var a) ? a.GetString() ?? "" : "";
+                            string path = TryGetProp(item, "path", out var p) ? p.GetString() ?? "" : "";
+                            long size = TryGetProp(item, "sizeBytes", out var s) ? s.GetInt64() : 0;
+                            string action = TryGetProp(item, "actionRequired", out var a) ? a.GetString() ?? "" : "";
                             Log($"    • [{action}] {System.IO.Path.GetFileName(path)} ({size / 1024} KB)", "info");
                         }
                     }
@@ -860,8 +919,6 @@ namespace Optimax.UI
                 }
             }
             catch { }
-
-            Log($"Chi tiết kết quả Payload: {payloadJson}", "info");
         }
     }
 }
