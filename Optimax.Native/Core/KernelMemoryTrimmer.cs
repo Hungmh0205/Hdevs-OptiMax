@@ -59,7 +59,7 @@ namespace Optimax.Core
         private const string SE_PROFILE_SINGLE_PROCESS_NAME = "SeProfileSingleProcessPrivilege";
 
         private const int SYSTEM_MEMORY_LIST_INFORMATION = 80;
-        private const int MEMORY_PURGE_STANDBY_LIST = 2;
+        private const int MEMORY_PURGE_STANDBY_LIST = 1;
 
         private static DateTime _lastStandbyPurgeTime = DateTime.MinValue;
         private static readonly TimeSpan StandbyPurgeCooldown = TimeSpan.FromMinutes(15);
@@ -69,6 +69,32 @@ namespace Optimax.Core
         {
             "system", "idle", "dwm", "explorer", "csrss", "lsass", "services", "smss", "winlogon", "svchost", "spoolsv"
         };
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern IntPtr OpenProcess(uint processAccess, bool bInheritHandle, int processId);
+
+        private const uint PROCESS_SET_QUOTA = 0x0100;
+        private const uint PROCESS_QUERY_INFORMATION = 0x0400;
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+        private class MEMORYSTATUSEX
+        {
+            public uint dwLength;
+            public uint dwMemoryLoad;
+            public ulong ullTotalPhys;
+            public ulong ullAvailPhys;
+            public ulong ullTotalPageFile;
+            public ulong ullAvailPageFile;
+            public ulong ullTotalVirtual;
+            public ulong ullAvailVirtual;
+            public ulong ullAvailExtendedVirtual;
+            public MEMORYSTATUSEX() { dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>(); }
+
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool GlobalMemoryStatusEx([In, Out] MEMORYSTATUSEX lpBuffer);
 
         private static uint GetForegroundProcessId()
         {
@@ -122,7 +148,8 @@ namespace Optimax.Core
                     }
                 };
 
-                return AdjustTokenPrivileges(hToken, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero);
+                bool ok = AdjustTokenPrivileges(hToken, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero);
+                return ok && Marshal.GetLastWin32Error() == 0;
             }
             finally
             {
@@ -138,7 +165,6 @@ namespace Optimax.Core
             EnablePrivilege(SE_PROFILE_SINGLE_PROCESS_NAME);
 
             // 1. Adaptive Standby List Purging
-            // Purge System Standby List ONLY if available physical RAM is below critical threshold (<2GB) OR forceDeepPurge is true AND cooldown has elapsed.
             bool standbyFlushed = false;
             bool isUnderMemoryPressure = initialPhysicalAvailable < CRITICAL_AVAILABLE_RAM_THRESHOLD_BYTES;
             bool shouldPurgeStandby = (isUnderMemoryPressure || forceDeepPurge)
@@ -160,7 +186,6 @@ namespace Optimax.Core
             }
 
             // 2. Selective Working Set Trimming
-            // Only trim Working Sets of idle background non-system processes consuming >150MB RAM if system is under memory pressure or deep purge requested.
             uint foregroundPid = GetForegroundProcessId();
             int currentPid = Environment.ProcessId;
 
@@ -175,16 +200,25 @@ namespace Optimax.Core
                         if (proc.HasExited) continue;
                         int pId = proc.Id;
 
-                        // Skip current process, foreground app, and system core processes
                         if (pId == currentPid || (uint)pId == foregroundPid) continue;
                         if (SystemExcludedProcesses.Contains(proc.ProcessName)) continue;
 
-                        // Skip small processes (<150MB) to prevent unnecessary I/O thrashing
                         if (proc.WorkingSet64 < 150L * 1024 * 1024) continue;
 
-                        if (EmptyWorkingSet(proc.Handle))
+                        IntPtr hProc = OpenProcess(PROCESS_SET_QUOTA | PROCESS_QUERY_INFORMATION, false, pId);
+                        if (hProc != IntPtr.Zero)
                         {
-                            trimmedCount++;
+                            try
+                            {
+                                if (EmptyWorkingSet(hProc))
+                                {
+                                    trimmedCount++;
+                                }
+                            }
+                            finally
+                            {
+                                CloseHandle(hProc);
+                            }
                         }
                     }
                     catch
@@ -212,13 +246,15 @@ namespace Optimax.Core
         {
             try
             {
-                var gcInfo = GC.GetGCMemoryInfo();
-                return gcInfo.TotalAvailableMemoryBytes;
+                MEMORYSTATUSEX memStatus = new MEMORYSTATUSEX();
+                if (GlobalMemoryStatusEx(memStatus))
+                {
+                    return (long)memStatus.ullAvailPhys;
+                }
             }
-            catch
-            {
-                return 0;
-            }
+            catch { }
+            return 0;
         }
     }
 }
+

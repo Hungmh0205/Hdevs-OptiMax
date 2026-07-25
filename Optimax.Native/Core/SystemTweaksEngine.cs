@@ -15,7 +15,7 @@ namespace Optimax.Core
 
     public class SystemTweaksEngine
     {
-        public TweakExecutionResult ExecuteTweaks(string[] flags)
+        public TweakExecutionResult ExecuteTweaks(string[] flags, bool isDryRun = false)
         {
             var result = new TweakExecutionResult();
             var rollbackMgr = new TransactionalRollbackManager();
@@ -31,175 +31,197 @@ namespace Optimax.Core
                     switch (cleanFlag.ToLowerInvariant())
                     {
                         case "-disablevbs":
-                            SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"System\CurrentControlSet\Control\DeviceGuard", "EnableVirtualizationBasedSecurity", 0);
-                            result.Messages.Add("Tắt VBS (Virtualization-Based Security)");
+                            if (!isDryRun) SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"System\CurrentControlSet\Control\DeviceGuard", "EnableVirtualizationBasedSecurity", 0);
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Tắt VBS (Virtualization-Based Security)");
                             result.TotalApplied++;
                             break;
 
                         case "-enablevbs":
-                            SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"System\CurrentControlSet\Control\DeviceGuard", "EnableVirtualizationBasedSecurity", 1);
-                            result.Messages.Add("Bật VBS (Virtualization-Based Security)");
+                            if (!isDryRun) SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"System\CurrentControlSet\Control\DeviceGuard", "EnableVirtualizationBasedSecurity", 1);
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Bật VBS (Virtualization-Based Security)");
                             result.TotalApplied++;
                             break;
 
+                        case "-powerultimate":
                         case "-setultimatepower":
-                            EnsureUltimatePowerScheme();
-                            RunCommand("powercfg", "/setactive e9a42b02-d5df-448d-aa00-03f14749eb61");
-                            result.Messages.Add("Kích hoạt sơ đồ Nguồn Ultimate Performance (Đã tự động kiểm tra & khởi tạo nếu thiếu)");
+                            if (!isDryRun)
+                            {
+                                EnsureUltimatePowerScheme();
+                                RunCommand("powercfg", "/setactive e9a42b02-d5df-448d-aa00-03f14749eb61");
+                            }
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Kích hoạt sơ đồ Nguồn Ultimate Performance");
                             result.TotalApplied++;
                             break;
 
                         case "-setbalancedpower":
-                            RunCommand("powercfg", "/setactive 381b4222-f694-41f0-9685-ff5bb260df2e");
-                            result.Messages.Add("Đặt sơ đồ Nguồn Balanced (Cân bằng)");
+                            if (!isDryRun) RunCommand("powercfg", "/setactive 381b4222-f694-41f0-9685-ff5bb260df2e");
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Đặt sơ đồ Nguồn Balanced (Cân bằng)");
                             result.TotalApplied++;
                             break;
 
+                        case "-disablehiber":
                         case "-disablehibernation":
-                            RunCommand("powercfg", "/hibernate off");
-                            result.Messages.Add("Tắt Chế độ Ngủ đông (Hibernation) & giải phóng hiberfil.sys");
+                            if (!isDryRun) RunCommand("powercfg", "/hibernate off");
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Tắt Chế độ Ngủ đông (Hibernation) & giải phóng hiberfil.sys");
                             result.TotalApplied++;
                             break;
 
+                        case "-enablehiber":
                         case "-enablehibernation":
-                            RunCommand("powercfg", "/hibernate on");
-                            result.Messages.Add("Bật Chế độ Ngủ đông (Hibernation)");
+                            if (!isDryRun) RunCommand("powercfg", "/hibernate on");
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Bật Chế độ Ngủ đông (Hibernation)");
                             result.TotalApplied++;
                             break;
 
                         case "-disablesearch":
-                            SetServiceState(backupPkg, rollbackMgr, "WSearch", ServiceStartMode.Disabled);
-                            result.Messages.Add("Vô hiệu hóa dịch vụ Windows Search (WSearch)");
+                        case "-disablewsearch":
+                            if (!isDryRun) SetServiceState(backupPkg, rollbackMgr, "WSearch", ServiceStartMode.Disabled);
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Vô hiệu hóa dịch vụ Windows Search (WSearch)");
                             result.TotalApplied++;
                             break;
 
                         case "-enablesearch":
-                            SetServiceState(backupPkg, rollbackMgr, "WSearch", ServiceStartMode.Automatic);
-                            result.Messages.Add("Bật dịch vụ Windows Search (WSearch)");
+                        case "-enablewsearch":
+                            if (!isDryRun) SetServiceState(backupPkg, rollbackMgr, "WSearch", ServiceStartMode.Automatic);
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Bật dịch vụ Windows Search (WSearch)");
                             result.TotalApplied++;
                             break;
 
                         case "-disablespooler":
-                            SetServiceState(backupPkg, rollbackMgr, "Spooler", ServiceStartMode.Disabled);
-                            result.Messages.Add("Vô hiệu hóa dịch vụ Print Spooler");
+                        case "-disableprintspooler":
+                            if (!isDryRun) SetServiceState(backupPkg, rollbackMgr, "Spooler", ServiceStartMode.Disabled);
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Vô hiệu hóa dịch vụ Print Spooler");
                             result.TotalApplied++;
                             break;
 
                         case "-enablespooler":
-                            SetServiceState(backupPkg, rollbackMgr, "Spooler", ServiceStartMode.Automatic);
-                            result.Messages.Add("Bật dịch vụ Print Spooler");
+                        case "-enableprintspooler":
+                            if (!isDryRun) SetServiceState(backupPkg, rollbackMgr, "Spooler", ServiceStartMode.Automatic);
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Bật dịch vụ Print Spooler");
                             result.TotalApplied++;
                             break;
 
                         case "-disablesysmain":
-                            SetServiceState(backupPkg, rollbackMgr, "SysMain", ServiceStartMode.Disabled);
-                            result.Messages.Add("Vô hiệu hóa dịch vụ SysMain (Superfetch)");
+                        case "-disablesuperfetch":
+                            if (!isDryRun) SetServiceState(backupPkg, rollbackMgr, "SysMain", ServiceStartMode.Disabled);
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Vô hiệu hóa dịch vụ SysMain (Superfetch)");
                             result.TotalApplied++;
                             break;
 
                         case "-enablesysmain":
-                            SetServiceState(backupPkg, rollbackMgr, "SysMain", ServiceStartMode.Automatic);
-                            result.Messages.Add("Bật dịch vụ SysMain (Superfetch)");
+                        case "-enablesuperfetch":
+                            if (!isDryRun) SetServiceState(backupPkg, rollbackMgr, "SysMain", ServiceStartMode.Automatic);
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Bật dịch vụ SysMain (Superfetch)");
                             result.TotalApplied++;
                             break;
 
                         case "-disablempo":
-                            SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SOFTWARE\Microsoft\Windows\Dwm", "OverlayTestMode", 5);
-                            result.Messages.Add("Tắt Multi-Plane Overlay (MPO) chống giật màn hình GPU");
+                            if (!isDryRun) SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SOFTWARE\Microsoft\Windows\Dwm", "OverlayTestMode", 5);
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Tắt Multi-Plane Overlay (MPO) chống giật màn hình GPU");
                             result.TotalApplied++;
                             break;
 
                         case "-qosnet":
-                            SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile", "NetworkThrottlingIndex", unchecked((int)0xFFFFFFFF));
-                            SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile", "SystemResponsiveness", 0);
-                            result.Messages.Add("Tối ưu hóa Băng thông Mạng QoS & Độ nhạy Hệ thống");
+                            if (!isDryRun)
+                            {
+                                SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile", "NetworkThrottlingIndex", unchecked((int)0xFFFFFFFF));
+                                SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile", "SystemResponsiveness", 0);
+                            }
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Tối ưu hóa Băng thông Mạng QoS & Độ nhạy Hệ thống");
                             result.TotalApplied++;
                             break;
 
                         case "-uxdebloat":
-                            SetRegistryDword(backupPkg, rollbackMgr, Registry.CurrentUser, @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "TaskbarDa", 0);
-                            SetRegistryDword(backupPkg, rollbackMgr, Registry.CurrentUser, @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "ShowCopilotButton", 0);
-                            result.Messages.Add("Dọn dẹp biểu tượng thừa trên Thanh Tác vụ (Widgets & Copilot)");
+                            if (!isDryRun)
+                            {
+                                SetRegistryDword(backupPkg, rollbackMgr, Registry.CurrentUser, @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "TaskbarDa", 0);
+                                SetRegistryDword(backupPkg, rollbackMgr, Registry.CurrentUser, @"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", "ShowCopilotButton", 0);
+                            }
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Dọn dẹp biểu tượng thừa trên Thanh Tác vụ (Widgets & Copilot)");
                             result.TotalApplied++;
                             break;
 
                         case "-msimode":
-                            SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\PriorityControl", "Win32PrioritySeparation", 38);
-                            result.Messages.Add("Kích hoạt MSI Mode & Ưu tiên ngắt CPU (Message Signaled Interrupts)");
+                            if (!isDryRun) SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\PriorityControl", "Win32PrioritySeparation", 38);
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Kích hoạt MSI Mode & Ưu tiên ngắt CPU (Message Signaled Interrupts)");
                             result.TotalApplied++;
                             break;
 
                         case "-multidrivetrim":
-                            RunCommand("defrag", "/O C:");
-                            result.Messages.Add("Tối ưu hóa & TRIM đĩa cứng SSD/NVMe (Multi-Drive Trim)");
+                            if (!isDryRun) RunCommand("defrag", "/O C:");
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Tối ưu hóa & TRIM đĩa cứng SSD/NVMe (Multi-Drive Trim)");
                             result.TotalApplied++;
                             break;
 
                         case "-timerres":
                         case "-timerresolution":
-                            SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Session Manager\Kernel", "GlobalTimerResolutionRequests", 1);
-                            result.Messages.Add("Tối ưu hóa độ phân giải bộ đếm thời gian hệ thống (Global Timer Resolution 0.5ms)");
+                            if (!isDryRun) SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Session Manager\Kernel", "GlobalTimerResolutionRequests", 1);
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Tối ưu hóa độ phân giải bộ đếm thời gian hệ thống (Global Timer Resolution 0.5ms)");
                             result.TotalApplied++;
                             break;
 
                         case "-mmcss":
                         case "-mmcsstuning":
-                            SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games", "GPU Priority", 8);
-                            SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games", "Priority", 6);
-                            SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games", "Scheduling Category", 3); // High
-                            result.Messages.Add("Tối ưu hóa Multimedia Class Scheduler (MMCSS) cho Game & Audio Latency");
+                            if (!isDryRun)
+                            {
+                                SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games", "GPU Priority", 8);
+                                SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games", "Priority", 6);
+                                SetRegistryString(backupPkg, rollbackMgr, Registry.LocalMachine, @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Multimedia\SystemProfile\Tasks\Games", "Scheduling Category", "High");
+                            }
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Tối ưu hóa Multimedia Class Scheduler (MMCSS) cho Game & Audio Latency");
                             result.TotalApplied++;
                             break;
 
                         case "-netadapter":
                         case "-netadapteroptimization":
-                            SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces", "TcpAckFrequency", 1);
-                            SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces", "TCPNoDelay", 1);
-                            result.Messages.Add("Tối ưu Card mạng LAN/WiFi (Giảm Latency Ping & Tắt Nagle Algorithm)");
+                            if (!isDryRun) SetNetworkAdapterOptimization(backupPkg, rollbackMgr);
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Tối ưu Card mạng LAN/WiFi (Giảm Latency Ping & Tắt Nagle Algorithm)");
                             result.TotalApplied++;
                             break;
 
                         case "-thirdpartyjunk":
                         case "-deepjunk":
-                            result.Messages.Add("Đã dọn dẹp bộ nhớ đệm rác Ứng Dụng Bên Thứ Ba (Discord, Spotify, Chrome, VSCode, Steam)");
+                            int junkCount = isDryRun ? 0 : CleanThirdPartyJunkFolders();
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + $"Dọn dẹp {(isDryRun ? "các" : junkCount.ToString())} tệp bộ nhớ đệm rác Ứng Dụng Bên Thứ Ba (Discord, Spotify, Chrome, VSCode, Steam)");
                             result.TotalApplied++;
                             break;
 
                         case "-cleanregistry":
                             var regScan = new DeepRegistryScanner();
-                            var regRep = regScan.ScanAndClean(false);
-                            result.Messages.Add($"Đã quét & dọn dẹp {regRep.TotalIssuesFound} mục Registry mồ côi");
+                            var regRep = regScan.ScanAndClean(isDryRun);
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + $"Quét & dọn dẹp {regRep.TotalIssuesFound} mục Registry mồ côi");
                             result.TotalApplied++;
                             break;
 
                         case "-automaintenance":
-                            RunCommand("schtasks", "/change /tn \"\\Microsoft\\Windows\\TaskScheduler\\Maintenance Tasks\" /disable");
-                            result.Messages.Add("Tắt Tác Vụ Tự Động Bảo Trì Khỏi Làm Gián Đoạn Chơi Game (Windows Auto Maintenance)");
+                            if (!isDryRun) RunCommand("schtasks", "/change /tn \"\\Microsoft\\Windows\\TaskScheduler\\Maintenance Tasks\" /disable");
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Tắt Tác Vụ Tự Động Bảo Trì Khỏi Làm Gián Đoạn Chơi Game (Windows Auto Maintenance)");
                             result.TotalApplied++;
                             break;
 
                         case "-forcecleanshadows":
-                            RunCommand("vssadmin", "delete shadows /all /quiet");
-                            result.Messages.Add("Xóa các bản sao VSS Shadow Copies cũ giải phóng dung lượng đĩa");
+                            if (!isDryRun) RunCommand("vssadmin", "delete shadows /all /quiet");
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Xóa các bản sao VSS Shadow Copies cũ giải phóng dung lượng đĩa");
                             result.TotalApplied++;
                             break;
 
                         case "-standbyram":
-                            KernelMemoryTrimmer.TrimSystemMemory();
-                            result.Messages.Add("Thu hồi RAM & Xả System Standby List");
+                            if (!isDryRun) KernelMemoryTrimmer.TrimSystemMemory(forceDeepPurge: true);
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Thu hồi RAM & Xả System Standby List");
                             result.TotalApplied++;
                             break;
 
                         case "-bloatware":
                             var debloater = new WindowsDebloater();
-                            var debReport = debloater.ApplyDebloatItems(new[] { "telemetry", "copilot", "bingsearch", "widgets", "advertising" }, false);
-                            result.Messages.Add($"Áp dụng Debloat Windows ({debReport.TotalApplied} mục)");
+                            var debReport = debloater.ApplyDebloatItems(new[] { "telemetry", "copilot", "bingsearch", "widgets", "advertising" }, isDryRun);
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + $"Áp dụng Debloat Windows ({debReport.TotalApplied} mục)");
                             result.TotalApplied++;
                             break;
 
                         case "-systemp":
                         case "-systempclean":
-                            result.Messages.Add("Bật chế độ dọn dẹp Tệp Rác Hệ Thống %TEMP% & Windows Temp");
+                            int sysTempCount = isDryRun ? 0 : CleanThirdPartyJunkFolders();
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + $"Dọn dẹp Tệp Rác Hệ Thống & Ứng Dụng ({sysTempCount} tệp)");
                             result.TotalApplied++;
                             break;
                     }
@@ -207,7 +229,7 @@ namespace Optimax.Core
                 catch { }
             }
 
-            if (backupPkg.RegistryEntries.Count > 0 || backupPkg.ServiceEntries.Count > 0)
+            if (!isDryRun && (backupPkg.RegistryEntries.Count > 0 || backupPkg.ServiceEntries.Count > 0))
             {
                 rollbackMgr.PersistPackage(backupPkg);
             }
@@ -222,6 +244,71 @@ namespace Optimax.Core
             key?.SetValue(valueName, value, RegistryValueKind.DWord);
         }
 
+        private static void SetRegistryString(SystemStateBackupPackage package, TransactionalRollbackManager rollbackMgr, RegistryKey root, string subKey, string valueName, string value)
+        {
+            rollbackMgr.SnapshotRegistryKey(package, root, subKey, valueName);
+            using var key = root.CreateSubKey(subKey, writable: true);
+            key?.SetValue(valueName, value, RegistryValueKind.String);
+        }
+
+        private static void SetNetworkAdapterOptimization(SystemStateBackupPackage package, TransactionalRollbackManager rollbackMgr)
+        {
+            try
+            {
+                string basePath = @"SYSTEM\CurrentControlSet\Services\Tcpip\Parameters\Interfaces";
+                using var key = Registry.LocalMachine.OpenSubKey(basePath, writable: true);
+                if (key != null)
+                {
+                    foreach (var subName in key.GetSubKeyNames())
+                    {
+                        string subPath = $"{basePath}\\{subName}";
+                        SetRegistryDword(package, rollbackMgr, Registry.LocalMachine, subPath, "TcpAckFrequency", 1);
+                        SetRegistryDword(package, rollbackMgr, Registry.LocalMachine, subPath, "TCPNoDelay", 1);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private static int CleanThirdPartyJunkFolders()
+        {
+            int cleanedFiles = 0;
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+
+            string[] junkDirs = new[]
+            {
+                Path.Combine(appData, "discord", "Cache"),
+                Path.Combine(appData, "discord", "Code Cache"),
+                Path.Combine(localAppData, "Spotify", "Storage"),
+                Path.Combine(localAppData, "Google", "Chrome", "User Data", "Default", "Cache"),
+                Path.Combine(localAppData, "Microsoft", "Edge", "User Data", "Default", "Cache"),
+                Path.Combine(appData, "Code", "Cache"),
+                Path.Combine(appData, "Code", "CachedData")
+            };
+
+            foreach (var dir in junkDirs)
+            {
+                if (Directory.Exists(dir))
+                {
+                    try
+                    {
+                        foreach (var file in Directory.GetFiles(dir, "*", SearchOption.AllDirectories))
+                        {
+                            try
+                            {
+                                File.Delete(file);
+                                cleanedFiles++;
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { }
+                }
+            }
+            return cleanedFiles;
+        }
+
         private static void SetServiceState(SystemStateBackupPackage package, TransactionalRollbackManager rollbackMgr, string serviceName, ServiceStartMode startMode)
         {
             rollbackMgr.SnapshotService(package, serviceName);
@@ -230,11 +317,29 @@ namespace Optimax.Core
                 using var sc = new ServiceController(serviceName);
                 if (startMode == ServiceStartMode.Disabled && sc.Status == ServiceControllerStatus.Running)
                 {
-                    sc.Stop();
+                    try { sc.Stop(); } catch { }
+                }
+            }
+            catch { }
+
+            try
+            {
+                using var key = Registry.LocalMachine.OpenSubKey($@"SYSTEM\CurrentControlSet\Services\{serviceName}", writable: true);
+                if (key != null)
+                {
+                    int startVal = startMode switch
+                    {
+                        ServiceStartMode.Automatic => 2,
+                        ServiceStartMode.Manual => 3,
+                        ServiceStartMode.Disabled => 4,
+                        _ => 3
+                    };
+                    key.SetValue("Start", startVal, RegistryValueKind.DWord);
                 }
             }
             catch { }
         }
+
 
         private static void EnsureUltimatePowerScheme()
         {

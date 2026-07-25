@@ -35,11 +35,11 @@ namespace Optimax.Core
             return IntPtr.Zero;
         }
 
-        [DllImport("sqlite3.dll", EntryPoint = "sqlite3_open_v2", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        private static extern int sqlite3_open_v2(string filename, out IntPtr db, int flags, string? zVfs);
+        [DllImport("sqlite3.dll", EntryPoint = "sqlite3_open_v2", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int sqlite3_open_v2(byte[] filename, out IntPtr db, int flags, string? zVfs);
 
-        [DllImport("sqlite3.dll", EntryPoint = "sqlite3_exec", CallingConvention = CallingConvention.Cdecl, CharSet = CharSet.Ansi)]
-        private static extern int sqlite3_exec(IntPtr db, string sql, IntPtr callback, IntPtr arg, out IntPtr errmsg);
+        [DllImport("sqlite3.dll", EntryPoint = "sqlite3_exec", CallingConvention = CallingConvention.Cdecl)]
+        private static extern int sqlite3_exec(IntPtr db, byte[] sql, IntPtr callback, IntPtr arg, out IntPtr errmsg);
 
         [DllImport("sqlite3.dll", EntryPoint = "sqlite3_close", CallingConvention = CallingConvention.Cdecl)]
         private static extern int sqlite3_close(IntPtr db);
@@ -51,6 +51,18 @@ namespace Optimax.Core
         {
             var results = new List<BrowserScanItemResult>();
             long totalReclaimed = 0;
+
+            bool isSqliteAvailable = false;
+            try
+            {
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string localDll = Path.Combine(baseDir, "sqlite3.dll");
+                if (File.Exists(localDll) || NativeLibrary.TryLoad("sqlite3.dll", out _))
+                {
+                    isSqliteAvailable = true;
+                }
+            }
+            catch { }
 
             var targets = DiscoverBrowserDatabases();
 
@@ -72,6 +84,20 @@ namespace Optimax.Core
                         0,
                         true,
                         "Skipped (File Locked by Browser)"
+                    ));
+                    continue;
+                }
+
+                if (!isSqliteAvailable)
+                {
+                    results.Add(new BrowserScanItemResult(
+                        browserName,
+                        dbPath,
+                        originalSize,
+                        originalSize,
+                        0,
+                        false,
+                        "Skipped (sqlite3.dll missing)"
                     ));
                     continue;
                 }
@@ -204,13 +230,23 @@ namespace Optimax.Core
         {
             try
             {
-                int res = sqlite3_open_v2(dbPath, out IntPtr db, SQLITE_OPEN_READWRITE, null);
+                byte[] pathBytes = System.Text.Encoding.UTF8.GetBytes(dbPath + "\0");
+                int res = sqlite3_open_v2(pathBytes, out IntPtr db, SQLITE_OPEN_READWRITE, null);
                 if (res != 0 || db == IntPtr.Zero) return originalSize;
 
                 try
                 {
-                    sqlite3_exec(db, "VACUUM;", IntPtr.Zero, IntPtr.Zero, out _);
-                    sqlite3_exec(db, "REINDEX;", IntPtr.Zero, IntPtr.Zero, out _);
+                    byte[] vacuumSql = System.Text.Encoding.UTF8.GetBytes("VACUUM;\0");
+                    if (sqlite3_exec(db, vacuumSql, IntPtr.Zero, IntPtr.Zero, out IntPtr err1) != 0 && err1 != IntPtr.Zero)
+                    {
+                        sqlite3_free(err1);
+                    }
+
+                    byte[] reindexSql = System.Text.Encoding.UTF8.GetBytes("REINDEX;\0");
+                    if (sqlite3_exec(db, reindexSql, IntPtr.Zero, IntPtr.Zero, out IntPtr err2) != 0 && err2 != IntPtr.Zero)
+                    {
+                        sqlite3_free(err2);
+                    }
                 }
                 finally
                 {

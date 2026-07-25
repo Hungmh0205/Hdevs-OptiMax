@@ -36,8 +36,8 @@ namespace Optimax.Core
             var backupPackage = rollbackMgr.CreatePackage();
 
             // 1. Scan Invalid CLSIDs
-            ScanClsids(Registry.ClassesRoot, "HKEY_CLASSES_ROOT", items);
-            ScanClsids(Registry.LocalMachine, "HKEY_LOCAL_MACHINE\\SOFTWARE\\Classes\\CLSID", items);
+            ScanClsids(Registry.ClassesRoot, "HKEY_CLASSES_ROOT", "CLSID", items);
+            ScanClsids(Registry.LocalMachine, "HKEY_LOCAL_MACHINE", "SOFTWARE\\Classes\\CLSID", items);
 
             // 2. Scan Missing Shared DLLs
             ScanSharedDlls(Registry.LocalMachine, "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\SharedDlls", items);
@@ -111,14 +111,12 @@ namespace Optimax.Core
             return new RegistryScanReport(isDryRun, items.Count, backupId, items.ToArray());
         }
 
-        private static void ScanClsids(RegistryKey rootKey, string baseSubKey, List<RegistryScanItemResult> results)
+        private static void ScanClsids(RegistryKey rootKey, string hiveName, string relSubKey, List<RegistryScanItemResult> results)
         {
             try
             {
-                using var clsidKey = rootKey.OpenSubKey(baseSubKey.Contains('\\') ? baseSubKey.Substring(baseSubKey.IndexOf('\\') + 1) : "CLSID");
+                using var clsidKey = rootKey.OpenSubKey(relSubKey);
                 if (clsidKey == null) return;
-
-                string hiveName = baseSubKey.StartsWith("HKEY") ? baseSubKey.Split('\\')[0] : "HKEY_LOCAL_MACHINE";
 
                 foreach (var clsid in clsidKey.GetSubKeyNames())
                 {
@@ -136,7 +134,7 @@ namespace Optimax.Core
                         {
                             results.Add(new RegistryScanItemResult(
                                 hiveName,
-                                $"{baseSubKey}\\{clsid}\\{srvType}",
+                                $"{relSubKey}\\{clsid}\\{srvType}",
                                 "",
                                 "Invalid CLSID Server",
                                 path,
@@ -222,9 +220,9 @@ namespace Optimax.Core
                             "HKEY_LOCAL_MACHINE",
                             $"{subKeyPath}\\{appKeyName}",
                             "InstallLocation",
-                            "Orphaned Uninstall Key",
+                            "Invalid Uninstall Location Value",
                             installLoc,
-                            "DeleteRegistryKey"
+                            "DeleteRegistryValue"
                         ));
                     }
                 }
@@ -367,14 +365,24 @@ namespace Optimax.Core
         {
             if (string.IsNullOrWhiteSpace(rawPath)) return false;
 
-            string path = Environment.ExpandEnvironmentVariables(rawPath).Trim('"', ' ', '\'');
+            string path = Environment.ExpandEnvironmentVariables(rawPath).Trim();
 
-            // Strip arguments if executable path
-            if (path.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && path.Contains(" "))
+            // Properly extract executable path if arguments or quotes are present
+            if (path.StartsWith("\""))
+            {
+                int endQuote = path.IndexOf('"', 1);
+                if (endQuote > 1) path = path.Substring(1, endQuote - 1);
+            }
+            else
             {
                 int exeIdx = path.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
-                if (exeIdx > 0) path = path.Substring(0, exeIdx + 4);
+                if (exeIdx > 0 && exeIdx + 4 < path.Length && (path[exeIdx + 4] == ' ' || path[exeIdx + 4] == '/' || path[exeIdx + 4] == '-'))
+                {
+                    path = path.Substring(0, exeIdx + 4);
+                }
             }
+
+            path = path.Trim('"', ' ', '\'');
 
             // Whitelist System paths
             foreach (var safePath in WhitelistedSystemPaths)
@@ -383,12 +391,13 @@ namespace Optimax.Core
             }
 
             // Must look like absolute Windows path (e.g., C:\...)
-            if (path.Length > 3 && path[1] == ':' && (path[2] == '\\' || path[2] == '/'))
+            if (path.Length >= 3 && path[1] == ':' && (path[2] == '\\' || path[2] == '/'))
             {
                 return !File.Exists(path) && !Directory.Exists(path);
             }
 
             return false;
         }
+
     }
 }

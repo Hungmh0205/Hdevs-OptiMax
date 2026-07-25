@@ -208,12 +208,13 @@ namespace Optimax.Core
         private static bool RestoreServiceState(string serviceName, ServiceStartMode startMode, ServiceControllerStatus status)
         {
             // Use Win32 SCM P/Invoke directly
-            return TransactionalRollbackManagerTest.SetServiceConfig(serviceName, startMode);
+            return ScmServiceManager.SetServiceConfig(serviceName, startMode);
         }
     }
 
-    internal static class TransactionalRollbackManagerTest
+    internal static class ScmServiceManager
     {
+
         [System.Runtime.InteropServices.DllImport("advapi32.dll", EntryPoint = "OpenSCManagerW", ExactSpelling = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
         private static extern IntPtr OpenSCManager(string? machineName, string? databaseName, uint dwDesiredAccess);
 

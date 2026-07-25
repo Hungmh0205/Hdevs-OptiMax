@@ -328,37 +328,49 @@ namespace Optimax.UI
             SetUiBusy(true, "Đang thực thi tối ưu hóa các mục đã chọn");
             try
             {
-                var flags = new List<string>();
+                var flags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-                if (chk_SysTempClean.IsChecked == true) flags.Add("-SysTemp");
-                if (chk_DisableVBS.IsChecked == true) flags.Add("-DisableVBS");
-                if (chk_DeepJunk.IsChecked == true) flags.Add("-DeepJunk");
-                if (chk_MSIMode.IsChecked == true) flags.Add("-MSIMode");
-                if (chk_DisableMPO.IsChecked == true) flags.Add("-DisableMPO");
-                if (chk_QoSNet.IsChecked == true) flags.Add("-QoSNet");
-                if (chk_MultiDriveTrim.IsChecked == true) flags.Add("-MultiDriveTrim");
-                if (chk_UXDebloat.IsChecked == true) flags.Add("-UXDebloat");
-                if (chk_Bloatware.IsChecked == true) flags.Add("-Bloatware");
-                if (chk_StandbyRAM.IsChecked == true) flags.Add("-StandbyRAM");
-                if (chk_TimerResolution.IsChecked == true) flags.Add("-TimerRes");
-                if (chk_MMCSSTuning.IsChecked == true) flags.Add("-MMCSS");
-                if (chk_NetAdapterOptimization.IsChecked == true) flags.Add("-NetAdapter");
-                if (chk_ThirdPartyJunk.IsChecked == true) flags.Add("-ThirdPartyJunk");
-                if (chk_CleanRegistry.IsChecked == true) flags.Add("-CleanRegistry");
-                if (chk_AutoMaintenance.IsChecked == true) flags.Add("-AutoMaintenance");
-                if (chk_ForceCleanShadows.IsChecked == true) flags.Add("-ForceCleanShadows");
+                if (chk_SysTempClean != null && chk_SysTempClean.IsChecked == true) flags.Add("-SysTemp");
+                if (chk_DisableVBS != null && chk_DisableVBS.IsChecked == true) flags.Add("-DisableVBS");
+                if (chk_DeepJunk != null && chk_DeepJunk.IsChecked == true) flags.Add("-DeepJunk");
+                if (chk_MSIMode != null && chk_MSIMode.IsChecked == true) flags.Add("-MSIMode");
+                if (chk_DisableMPO != null && chk_DisableMPO.IsChecked == true) flags.Add("-DisableMPO");
+                if (chk_QoSNet != null && chk_QoSNet.IsChecked == true) flags.Add("-QoSNet");
+                if (chk_MultiDriveTrim != null && chk_MultiDriveTrim.IsChecked == true) flags.Add("-MultiDriveTrim");
+                if (chk_UXDebloat != null && chk_UXDebloat.IsChecked == true) flags.Add("-UXDebloat");
+                if (chk_Bloatware != null && chk_Bloatware.IsChecked == true) flags.Add("-Bloatware");
+                if (chk_StandbyRAM != null && chk_StandbyRAM.IsChecked == true) flags.Add("-StandbyRAM");
+                if (chk_TimerResolution != null && chk_TimerResolution.IsChecked == true) flags.Add("-TimerRes");
+                if (chk_MMCSSTuning != null && chk_MMCSSTuning.IsChecked == true) flags.Add("-MMCSS");
+                if (chk_NetAdapterOptimization != null && chk_NetAdapterOptimization.IsChecked == true) flags.Add("-NetAdapter");
+                if (chk_ThirdPartyJunk != null && chk_ThirdPartyJunk.IsChecked == true) flags.Add("-ThirdPartyJunk");
+                if (chk_CleanRegistry != null && chk_CleanRegistry.IsChecked == true) flags.Add("-CleanRegistry");
+                if (chk_AutoMaintenance != null && chk_AutoMaintenance.IsChecked == true) flags.Add("-AutoMaintenance");
+                if (chk_ForceCleanShadows != null && chk_ForceCleanShadows.IsChecked == true) flags.Add("-ForceCleanShadows");
 
                 // Col 2 Toggles
-                if (vbs_disable.IsChecked == true) flags.Add("-DisableVBS");
-                if (power_ultimate.IsChecked == true) flags.Add("-PowerUltimate");
-                if (hiber_disable.IsChecked == true) flags.Add("-DisableHiber");
-                if (search_disable.IsChecked == true) flags.Add("-DisableSearch");
-                if (spooler_disable.IsChecked == true) flags.Add("-DisableSpooler");
-                if (sysmain_disable.IsChecked == true) flags.Add("-DisableSysMain");
+                if (vbs_disable != null && vbs_disable.IsChecked == true) flags.Add("-DisableVBS");
+                else if (vbs_enable != null && vbs_enable.IsChecked == true) flags.Add("-EnableVBS");
 
+                if (power_ultimate != null && power_ultimate.IsChecked == true) flags.Add("-PowerUltimate");
+                else if (power_balanced != null && power_balanced.IsChecked == true) flags.Add("-SetBalancedPower");
+
+                if (hiber_disable != null && hiber_disable.IsChecked == true) flags.Add("-DisableHiber");
+                else if (hiber_enable != null && hiber_enable.IsChecked == true) flags.Add("-EnableHiber");
+
+                if (search_disable != null && search_disable.IsChecked == true) flags.Add("-DisableSearch");
+                else if (search_enable != null && search_enable.IsChecked == true) flags.Add("-EnableSearch");
+
+                if (spooler_disable != null && spooler_disable.IsChecked == true) flags.Add("-DisableSpooler");
+                else if (spooler_enable != null && spooler_enable.IsChecked == true) flags.Add("-EnableSpooler");
+
+                if (sysmain_disable != null && sysmain_disable.IsChecked == true) flags.Add("-DisableSysMain");
+                else if (sysmain_enable != null && sysmain_enable.IsChecked == true) flags.Add("-EnableSysMain");
+
+                var flagsArray = flags.ToArray();
                 bool isDryRun = chk_DryRun != null && chk_DryRun.IsChecked == true;
-                Log($"BẮT ĐẦU THỰC THI TINH CHỈNH VỚI {flags.Count} CỜ CẤU HÌNH NATIVE (Dry-Run Mode = {isDryRun})...", "warn");
-                var res = await IpcClient.SendCommandAsync("clean", isDryRun: isDryRun, flags: flags.ToArray());
+                Log($"BẮT ĐẦU THỰC THI TINH CHỈNH VỚI {flagsArray.Length} CỜ CẤU HÌNH NATIVE (Dry-Run Mode = {isDryRun})...", "warn");
+                var res = await IpcClient.SendCommandAsync("clean", isDryRun: isDryRun, flags: flagsArray);
                 LogResponse(res);
             }
             finally
@@ -426,24 +438,12 @@ namespace Optimax.UI
                     }
                 }
             }
-            catch { }
-
-            var demoList = new List<StartupItemDto>
+            catch (Exception ex)
             {
-                new() { Id = "s1", Name = "OneDrive", Location = "HKCU Run", Command = "C:\\AppData\\OneDrive.exe", IsEnabled = true },
-                new() { Id = "s2", Name = "Discord", Location = "HKCU Run", Command = "C:\\AppData\\Discord.exe", IsEnabled = true },
-                new() { Id = "s3", Name = "Spotify", Location = "HKCU Run", Command = "C:\\AppData\\Spotify.exe", IsEnabled = false }
-            };
-            if (DgStartup != null) DgStartup.ItemsSource = demoList;
+                Log($"[x] Lỗi tải dữ liệu Startup: {ex.Message}", "err");
+            }
 
-            var demoServices = new List<ServiceItemDto>
-            {
-                new() { ServiceName = "DiagTrack", DisplayName = "Connected User Experiences and Telemetry", StartMode = "Disabled", Status = "Stopped", IsEssential = false },
-                new() { ServiceName = "SysMain", DisplayName = "SysMain Superfetch Service", StartMode = "Automatic", Status = "Running", IsEssential = false },
-                new() { ServiceName = "Spooler", DisplayName = "Print Spooler", StartMode = "Automatic", Status = "Running", IsEssential = false },
-                new() { ServiceName = "wuauserv", DisplayName = "Windows Update Service", StartMode = "Manual", Status = "Running", IsEssential = true }
-            };
-            if (DgServices != null) DgServices.ItemsSource = demoServices;
+            Log("[!] Không thể truy vấn danh sách Startup Items từ Native Engine.", "warn");
         }
 
         private async void BtnToggleStartup_Click(object sender, RoutedEventArgs e)
@@ -509,19 +509,12 @@ namespace Optimax.UI
                     }
                 }
             }
-            catch { }
-
-            // Fallback list
-            _allDebloatItems = new List<Optimax.Core.DebloatItemDto>
+            catch (Exception ex)
             {
-                new() { Id = "telemetry", Category = "Quyền Riêng Tư", Name = "Tắt Telemetry & Diagnostic Data", Description = "Vô hiệu hóa DiagTrack, dmwappushservice và cờ telemetry.", IsEnabled = false },
-                new() { Id = "copilot", Category = "Tính Năng Win 11", Name = "Vô Hiệu Hóa Windows Copilot AI", Description = "Tắt trợ lý AI Windows Copilot trên Windows 11.", IsEnabled = false },
-                new() { Id = "bingsearch", Category = "Giao Diện OS", Name = "Tắt Tìm Kiếm Bing Trong Start Menu", Description = "Ngăn Menu Start gợi ý tìm kiếm từ khóa trên mạng Bing.", IsEnabled = false },
-                new() { Id = "widgets", Category = "Giao Diện OS", Name = "Tắt Taskbar Widgets / Tin Tức", Description = "Ẩn biểu tượng Widgets (News and Interests) gây hao RAM.", IsEnabled = false },
-                new() { Id = "advertising", Category = "Quyền Riêng Tư", Name = "Tắt Quảng Cáo Cá Nhân Hóa", Description = "Tắt Advertising ID và các gợi ý ứng dụng Microsoft.", IsEnabled = false },
-                new() { Id = "uwp_bloatware", Category = "Ứng Dụng Rác", Name = "Gỡ Ứng Dụng Bloatware UWP Mặc Định", Description = "Gỡ Cortana, Weather, Solitaire, Xbox App, Zune, Maps...", IsEnabled = false }
-            };
-            if (DgDebloat != null) DgDebloat.ItemsSource = _allDebloatItems;
+                Log($"[x] Lỗi tải danh sách Debloat: {ex.Message}", "err");
+            }
+
+            Log("[!] Không thể truy vấn danh sách Debloat Items từ Native Engine.", "warn");
         }
 
         private async void BtnApplyDebloat_Click(object sender, RoutedEventArgs e)

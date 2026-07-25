@@ -484,7 +484,7 @@ namespace Optimax.Core
                         CreateNoWindow = true
                     };
                     using var proc = Process.Start(psi);
-                    proc?.WaitForExit(5000);
+                    proc?.WaitForExit(20000);
                     count++;
                 }
                 catch { }
@@ -506,7 +506,7 @@ namespace Optimax.Core
                     CreateNoWindow = true
                 };
                 using var proc = Process.Start(psi);
-                bool exited = proc?.WaitForExit(6000) ?? false;
+                bool exited = proc?.WaitForExit(20000) ?? false;
                 return exited;
             }
             catch

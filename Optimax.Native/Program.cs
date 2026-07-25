@@ -379,7 +379,7 @@ namespace Optimax
                         if (req.Flags != null && req.Flags.Length > 0)
                         {
                             var tweaksEngine = new SystemTweaksEngine();
-                            var tweakRes = tweaksEngine.ExecuteTweaks(req.Flags);
+                            var tweakRes = tweaksEngine.ExecuteTweaks(req.Flags, req.IsDryRun);
                             if (tweakRes.TotalApplied > 0)
                             {
                                 tweakMsg = $" (Đã áp dụng {tweakRes.TotalApplied} tinh chỉnh HĐH: {string.Join(", ", tweakRes.Messages)})";
@@ -521,6 +521,10 @@ namespace Optimax
                         var stats = GetSystemStats();
                         return new IPCResponse(true, "System stats retrieved", JsonSerializer.Serialize(stats, OptimaxJsonContext.Default.SystemStatsReport));
                     }
+                    else if (req.Command == "monitor-event")
+                    {
+                        return new IPCResponse(true, "Monitor threshold notification processed", null);
+                    }
                     return new IPCResponse(false, "Unknown command", null);
                 }, cts.Token);
 
@@ -532,7 +536,7 @@ namespace Optimax
             if (cliFlags.Count > 0)
             {
                 var tweaksEngine = new SystemTweaksEngine();
-                var tweakRes = tweaksEngine.ExecuteTweaks(cliFlags.ToArray());
+                var tweakRes = tweaksEngine.ExecuteTweaks(cliFlags.ToArray(), isDryRun);
                 if (tweakRes.TotalApplied > 0)
                 {
                     Console.WriteLine($"[OPTIMAX NATIVE] Đã áp dụng {tweakRes.TotalApplied} tinh chỉnh hệ thống:");
@@ -563,6 +567,7 @@ namespace Optimax
                 "C:\\ProgramData\\Microsoft\\Windows\\WER\\Temp"
             };
 
+            var matchedFilesList = new System.Collections.Generic.List<string>();
             var ruleEngine = new DynamicRuleEngine();
             if (File.Exists(rulesFilePath))
             {
@@ -570,10 +575,9 @@ namespace Optimax
                 {
                     string rulesJson = await File.ReadAllTextAsync(rulesFilePath);
                     var rules = ruleEngine.LoadRules(rulesJson);
-                    var matchedFiles = new System.Collections.Generic.List<string>();
                     foreach (var r in rules)
                     {
-                        matchedFiles.AddRange(ruleEngine.ResolveMatchedFiles(r));
+                        matchedFilesList.AddRange(ruleEngine.ResolveMatchedFiles(r));
                     }
                 }
                 catch { }
@@ -586,7 +590,7 @@ namespace Optimax
             string backupId = rollbackMgr.PersistPackage(backupPkg);
 
             var scanner = new ParallelScanner();
-            return await scanner.ExecuteScanAsync(targetDirs, isDryRun);
+            return await scanner.ExecuteScanAsync(targetDirs, isDryRun, matchedFilesList);
         }
 
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, CharSet = System.Runtime.InteropServices.CharSet.Auto)]
@@ -601,12 +605,81 @@ namespace Optimax
             public ulong ullTotalVirtual;
             public ulong ullAvailVirtual;
             public ulong ullAvailExtendedVirtual;
-            public MEMORYSTATUSEX() { dwLength = (uint)System.Runtime.InteropServices.Marshal.SizeOf(typeof(MEMORYSTATUSEX)); }
+            public MEMORYSTATUSEX() { dwLength = (uint)System.Runtime.InteropServices.Marshal.SizeOf<MEMORYSTATUSEX>(); }
+
         }
 
         [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto, SetLastError = true)]
         [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
         private static extern bool GlobalMemoryStatusEx([System.Runtime.InteropServices.In, System.Runtime.InteropServices.Out] MEMORYSTATUSEX lpBuffer);
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
+        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+        private static extern bool GetSystemTimes(out System.Runtime.InteropServices.ComTypes.FILETIME lpIdleTime, out System.Runtime.InteropServices.ComTypes.FILETIME lpKernelTime, out System.Runtime.InteropServices.ComTypes.FILETIME lpUserTime);
+
+        private static ulong _prevIdle = 0;
+        private static ulong _prevKernel = 0;
+        private static ulong _prevUser = 0;
+
+        private static int GetRealCpuUsage()
+        {
+            try
+            {
+                if (GetSystemTimes(out var idleTime, out var kernelTime, out var userTime))
+                {
+                    ulong idle = ((ulong)idleTime.dwHighDateTime << 32) | (uint)idleTime.dwLowDateTime;
+                    ulong kernel = ((ulong)kernelTime.dwHighDateTime << 32) | (uint)kernelTime.dwLowDateTime;
+                    ulong user = ((ulong)userTime.dwHighDateTime << 32) | (uint)userTime.dwLowDateTime;
+
+                    if (_prevIdle != 0)
+                    {
+                        ulong idleDiff = idle - _prevIdle;
+                        ulong kernelDiff = kernel - _prevKernel;
+                        ulong userDiff = user - _prevUser;
+
+                        ulong totalDiff = kernelDiff + userDiff;
+                        if (totalDiff > 0)
+                        {
+                            ulong busyDiff = totalDiff - idleDiff;
+                            int pct = (int)(busyDiff * 100 / totalDiff);
+                            _prevIdle = idle; _prevKernel = kernel; _prevUser = user;
+                            return Math.Clamp(pct, 0, 100);
+                        }
+                    }
+
+                    _prevIdle = idle; _prevKernel = kernel; _prevUser = user;
+                }
+            }
+            catch { }
+            return 12;
+        }
+
+        private static string GetActivePowerPlanName()
+        {
+            try
+            {
+                using var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes");
+                if (key != null)
+                {
+                    string? activeGuid = key.GetValue("ActivePowerScheme") as string;
+                    if (!string.IsNullOrEmpty(activeGuid))
+                    {
+                        using var schemeKey = key.OpenSubKey(activeGuid);
+                        string? name = schemeKey?.GetValue("FriendlyName") as string;
+                        if (!string.IsNullOrEmpty(name))
+                        {
+                            if (activeGuid.Equals("8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c", StringComparison.OrdinalIgnoreCase)) return "HIGH PERFORMANCE";
+                            if (activeGuid.Equals("381b4222-f694-41f0-9685-ff5bb260df2e", StringComparison.OrdinalIgnoreCase)) return "BALANCED";
+                            if (activeGuid.Equals("a1841308-3541-4fab-bc81-f71556f20b4a", StringComparison.OrdinalIgnoreCase)) return "POWER SAVER";
+                            if (activeGuid.Equals("e9a42b02-d5df-448d-aa00-03f14749eb61", StringComparison.OrdinalIgnoreCase)) return "ULTIMATE PERFORMANCE";
+                            return name.Trim();
+                        }
+                    }
+                }
+            }
+            catch { }
+            return "BALANCED";
+        }
 
         private static SystemStatsReport GetSystemStats()
         {
@@ -652,17 +725,18 @@ namespace Optimax
             catch { }
 
             return new SystemStatsReport(
-                CpuUsagePct: 12, // Dynamic sampling
+                CpuUsagePct: GetRealCpuUsage(),
                 RamUsagePct: ramUsagePct,
                 RamFreeGB: ramFreeGB,
                 RamTotalGB: ramTotalGB,
                 DiskFreeGB: diskFreeGB,
                 DiskTotalGB: diskTotalGB,
                 DiskUsedPct: diskUsedPct,
-                PowerPlan: "ULTIMATE PERFORMANCE",
+                PowerPlan: GetActivePowerPlanName(),
                 Hostname: Environment.MachineName,
                 IsAdmin: isAdmin
             );
         }
+
     }
 }

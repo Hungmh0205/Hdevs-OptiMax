@@ -152,28 +152,45 @@ namespace Optimax.Core
         {
             try
             {
-                using var pipeClient = new NamedPipeClientStream(".", "OptimaxIPC", PipeDirection.Out);
+                using var pipeClient = new NamedPipeClientStream(".", "OptimaxIPC", PipeDirection.InOut);
                 await pipeClient.ConnectAsync(1000);
 
                 using var writer = new StreamWriter(pipeClient) { AutoFlush = true };
-                string jsonNotif = JsonSerializer.Serialize(notification, OptimaxJsonContext.Default.MonitorNotification);
-                await writer.WriteLineAsync(jsonNotif.AsMemory());
+                var req = new IPCRequest("monitor-event", false, null, null, null, true, 2, null);
+                string reqJson = JsonSerializer.Serialize(req, OptimaxJsonContext.Default.IPCRequest);
+                await writer.WriteLineAsync(reqJson.AsMemory());
             }
             catch { }
         }
 
+
         private static long FastGetDirectorySize(string path)
         {
             long total = 0;
-            try
+            var queue = new Queue<string>();
+            queue.Enqueue(path);
+
+            while (queue.Count > 0)
             {
-                var dirInfo = new DirectoryInfo(path);
-                foreach (var file in dirInfo.EnumerateFiles("*", SearchOption.AllDirectories))
+                string current = queue.Dequeue();
+                try
                 {
-                    try { total += file.Length; } catch { }
+                    var dirInfo = new DirectoryInfo(current);
+                    FileInfo[] files = dirInfo.GetFiles();
+                    foreach (var file in files)
+                    {
+                        try { total += file.Length; } catch { }
+                    }
+
+                    DirectoryInfo[] subDirs = dirInfo.GetDirectories();
+                    foreach (var sd in subDirs)
+                    {
+                        queue.Enqueue(sd.FullName);
+                    }
                 }
+                catch { }
             }
-            catch { }
+
             return total;
         }
     }

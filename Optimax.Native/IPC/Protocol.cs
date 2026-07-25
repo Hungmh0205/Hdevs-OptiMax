@@ -106,11 +106,25 @@ namespace Optimax.IPC
         [JsonPropertyName("minProductVersion")] public string? MinProductVersion { get; set; }
     }
 
+    public class FileKeyEntry
+    {
+        [JsonPropertyName("basePath")] public string BasePath { get; set; } = string.Empty;
+        [JsonPropertyName("pattern")] public string Pattern { get; set; } = "*.*";
+
+        public FileKeyEntry() { }
+        public FileKeyEntry(string basePath, string pattern)
+        {
+            BasePath = basePath;
+            Pattern = pattern;
+        }
+    }
+
     public class DynamicCleaningRule
     {
         [JsonPropertyName("ruleId")] public string RuleId { get; set; } = string.Empty;
         [JsonPropertyName("name")] public string Name { get; set; } = string.Empty;
         [JsonPropertyName("condition")] public RuleCondition Condition { get; set; } = new();
+        [JsonPropertyName("fileKeys")] public List<FileKeyEntry> FileKeys { get; set; } = new();
         [JsonPropertyName("basePaths")] public List<string> BasePaths { get; set; } = new();
         [JsonPropertyName("includePatterns")] public List<string> IncludePatterns { get; set; } = new();
         [JsonPropertyName("excludeRegex")] public List<string> ExcludeRegex { get; set; } = new();

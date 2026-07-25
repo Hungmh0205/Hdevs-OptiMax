@@ -47,32 +47,52 @@ namespace Optimax.Core
             var excludeRegexes = new List<Regex>();
             foreach (var pattern in rule.ExcludeRegex)
             {
-                excludeRegexes.Add(new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Compiled));
+                try { excludeRegexes.Add(new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Compiled)); } catch { }
             }
 
-            foreach (var basePath in rule.BasePaths)
+            var entriesToScan = new List<FileKeyEntry>();
+            if (rule.FileKeys != null && rule.FileKeys.Count > 0)
             {
-                string expandedBase = Environment.ExpandEnvironmentVariables(basePath);
-                if (!Directory.Exists(expandedBase)) continue;
-
-                foreach (var pattern in rule.IncludePatterns)
+                entriesToScan.AddRange(rule.FileKeys);
+            }
+            else
+            {
+                foreach (var bp in rule.BasePaths)
                 {
-                    try
+                    foreach (var ip in rule.IncludePatterns)
                     {
-                        var files = Directory.GetFiles(expandedBase, pattern, SearchOption.AllDirectories);
-                        foreach (var file in files)
-                        {
-                            bool isExcluded = false;
-                            foreach (var rx in excludeRegexes)
-                            {
-                                if (rx.IsMatch(file)) { isExcluded = true; break; }
-                            }
-                            if (!isExcluded) matchedFiles.Add(file);
-                        }
+                        entriesToScan.Add(new FileKeyEntry(bp, ip));
                     }
-                    catch { }
                 }
             }
+
+            var visitedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var entry in entriesToScan)
+            {
+                if (string.IsNullOrWhiteSpace(entry.BasePath)) continue;
+                string expandedBase = Environment.ExpandEnvironmentVariables(entry.BasePath);
+                if (!Directory.Exists(expandedBase)) continue;
+
+                string searchPattern = string.IsNullOrWhiteSpace(entry.Pattern) ? "*.*" : entry.Pattern;
+                try
+                {
+                    var files = Directory.GetFiles(expandedBase, searchPattern, SearchOption.AllDirectories);
+                    foreach (var file in files)
+                    {
+                        if (!visitedFiles.Add(file)) continue;
+
+                        bool isExcluded = false;
+                        foreach (var rx in excludeRegexes)
+                        {
+                            if (rx.IsMatch(file)) { isExcluded = true; break; }
+                        }
+                        if (!isExcluded) matchedFiles.Add(file);
+                    }
+                }
+                catch { }
+            }
+
             return matchedFiles;
         }
     }

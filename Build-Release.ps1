@@ -54,6 +54,12 @@ if (Test-Path $winapp2Src) {
     Write-Host " [v] Bundled Winapp2.ini rule database" -ForegroundColor Green
 }
 
+$sqliteDll = Join-Path $PSScriptRoot "sqlite3.dll"
+if (Test-Path $sqliteDll) {
+    Copy-Item -Path $sqliteDll -Destination $OutputDir -Force
+    Write-Host " [v] Bundled sqlite3.dll library" -ForegroundColor Green
+}
+
 $readmeSrc = Join-Path $PSScriptRoot "README.md"
 if (Test-Path $readmeSrc) {
     Copy-Item -Path $readmeSrc -Destination $OutputDir -Force

@@ -127,13 +127,16 @@ namespace Optimax.Core
 
             foreach (var fk in fileKeys)
             {
-                int pipeIdx = fk.IndexOf('|');
-                string rawPath = pipeIdx >= 0 ? fk.Substring(0, pipeIdx).Trim() : fk.Trim();
-                string pattern = pipeIdx > 0 && pipeIdx < fk.Length - 1 ? fk.Substring(pipeIdx + 1).Trim() : "*.*";
+                string[] parts = fk.Split('|', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 0) continue;
 
-                if (string.IsNullOrEmpty(pattern)) pattern = "*.*";
+                string rawPath = parts[0].Trim();
+                string pattern = parts.Length > 1 ? parts[1].Trim() : "*.*";
+
+                if (string.IsNullOrEmpty(pattern) || pattern.Contains('|')) pattern = "*.*";
 
                 string normalizedPath = NormalizePath(rawPath);
+                rule.FileKeys.Add(new FileKeyEntry(normalizedPath, pattern));
                 rule.BasePaths.Add(normalizedPath);
                 rule.IncludePatterns.Add(pattern);
             }
@@ -144,21 +147,37 @@ namespace Optimax.Core
                 string rawPath = pipeIdx >= 0 ? ex.Substring(0, pipeIdx).Trim() : ex.Trim();
                 if (!string.IsNullOrEmpty(rawPath))
                 {
-                    string rx = Regex.Escape(rawPath).Replace("\\*", ".*");
+                    string rx = Regex.Escape(NormalizePath(rawPath)).Replace("\\*", ".*");
                     rule.ExcludeRegex.Add(rx);
                 }
             }
 
-            return rule.BasePaths.Count > 0 ? rule : null;
+            return rule.FileKeys.Count > 0 || rule.BasePaths.Count > 0 ? rule : null;
         }
 
         private static string NormalizePath(string rawPath)
         {
+            string localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            string winDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+            if (string.IsNullOrEmpty(winDir)) winDir = "C:\\Windows";
+            string systemDrive = Path.GetPathRoot(winDir) ?? "C:\\";
+            string commonAppData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+
             return rawPath
-                .Replace("%WinDir%", "%SystemRoot%", StringComparison.OrdinalIgnoreCase)
-                .Replace("%ProgramFiles%", "%ProgramFiles%", StringComparison.OrdinalIgnoreCase)
-                .Replace("%AppData%", "%AppData%", StringComparison.OrdinalIgnoreCase)
-                .Replace("%LocalAppData%", "%LocalAppData%", StringComparison.OrdinalIgnoreCase);
+                .Replace("%WinDir%", winDir, StringComparison.OrdinalIgnoreCase)
+                .Replace("%SystemRoot%", winDir, StringComparison.OrdinalIgnoreCase)
+                .Replace("%SystemDrive%", systemDrive.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)
+                .Replace("%ProgramFiles%", Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), StringComparison.OrdinalIgnoreCase)
+                .Replace("%AppData%", appData, StringComparison.OrdinalIgnoreCase)
+                .Replace("%LocalAppData%", localAppData, StringComparison.OrdinalIgnoreCase)
+                .Replace("%LocalAppdata%", localAppData, StringComparison.OrdinalIgnoreCase)
+                .Replace("%CommonAppData%", commonAppData, StringComparison.OrdinalIgnoreCase)
+                .Replace("%Chrome%", Path.Combine(localAppData, "Google\\Chrome\\User Data"), StringComparison.OrdinalIgnoreCase)
+                .Replace("%Firefox%", Path.Combine(appData, "Mozilla\\Firefox\\Profiles"), StringComparison.OrdinalIgnoreCase)
+                .Replace("%Thunderbird%", Path.Combine(appData, "Thunderbird\\Profiles"), StringComparison.OrdinalIgnoreCase)
+                .Replace("%Opera%", Path.Combine(appData, "Opera Software"), StringComparison.OrdinalIgnoreCase)
+                .Replace("%Profiles%", Path.Combine(appData, "Mozilla\\Firefox\\Profiles"), StringComparison.OrdinalIgnoreCase);
         }
     }
 }

@@ -74,23 +74,74 @@ namespace Optimax.Core
         public void SnapshotRegistryKey(SystemStateBackupPackage package, RegistryKey rootKey, string subKeyPath, string valueName)
         {
             using var key = rootKey.OpenSubKey(subKeyPath, writable: false);
-            var snapshot = new RegistryStateSnapshot
+            if (key == null)
             {
-                KeyPath = $"{rootKey.Name}\\{subKeyPath}",
-                ValueName = valueName
-            };
+                package.RegistryEntries.Add(new RegistryStateSnapshot
+                {
+                    KeyPath = $"{rootKey.Name}\\{subKeyPath}",
+                    ValueName = valueName,
+                    Existed = false
+                });
+                return;
+            }
 
-            if (key != null)
+            if (string.IsNullOrEmpty(valueName))
             {
+                // Snapshot entire key and all subkeys recursively
+                SnapshotRegistryTreeRecursive(package, rootKey, subKeyPath);
+            }
+            else
+            {
+                var snapshot = new RegistryStateSnapshot
+                {
+                    KeyPath = $"{rootKey.Name}\\{subKeyPath}",
+                    ValueName = valueName
+                };
+
                 var val = key.GetValue(valueName, null, RegistryValueOptions.DoNotExpandEnvironmentNames);
                 if (val != null)
                 {
                     snapshot.Existed = true;
-                    snapshot.OriginalValue = val;
                     snapshot.ValueKind = key.GetValueKind(valueName);
+                    if (val is byte[] bytes)
+                    {
+                        snapshot.OriginalValue = Convert.ToBase64String(bytes);
+                    }
+                    else
+                    {
+                        snapshot.OriginalValue = val;
+                    }
                 }
+
+                package.RegistryEntries.Add(snapshot);
             }
-            package.RegistryEntries.Add(snapshot);
+        }
+
+        private void SnapshotRegistryTreeRecursive(SystemStateBackupPackage package, RegistryKey rootKey, string subKeyPath)
+        {
+            using var key = rootKey.OpenSubKey(subKeyPath, writable: false);
+            if (key == null) return;
+
+            foreach (var vName in key.GetValueNames())
+            {
+                var val = key.GetValue(vName, null, RegistryValueOptions.DoNotExpandEnvironmentNames);
+                var snap = new RegistryStateSnapshot
+                {
+                    KeyPath = $"{rootKey.Name}\\{subKeyPath}",
+                    ValueName = vName,
+                    Existed = true,
+                    ValueKind = key.GetValueKind(vName)
+                };
+                if (val is byte[] bytes) snap.OriginalValue = Convert.ToBase64String(bytes);
+                else snap.OriginalValue = val;
+
+                package.RegistryEntries.Add(snap);
+            }
+
+            foreach (var skName in key.GetSubKeyNames())
+            {
+                SnapshotRegistryTreeRecursive(package, rootKey, $"{subKeyPath}\\{skName}");
+            }
         }
 
         public void SnapshotService(SystemStateBackupPackage package, string serviceName)
@@ -121,6 +172,7 @@ namespace Optimax.Core
 
         public bool ExecuteRollback(string backupId)
         {
+            if (string.IsNullOrWhiteSpace(backupId) || backupId.Contains("..") || backupId.Contains('/') || backupId.Contains('\\')) return false;
             string jsonPath = Path.Combine(_backupRoot, backupId, "snapshot.json");
             if (!File.Exists(jsonPath)) return false;
 
@@ -137,39 +189,35 @@ namespace Optimax.Core
                     {
                         "HKEY_LOCAL_MACHINE" => Registry.LocalMachine,
                         "HKEY_CURRENT_USER" => Registry.CurrentUser,
+                        "HKEY_CLASSES_ROOT" => Registry.ClassesRoot,
                         _ => Registry.LocalMachine
                     };
 
                     if (reg.Existed)
                     {
                         using var key = root.CreateSubKey(parts[1], writable: true);
-                        if (reg.OriginalValue != null)
+                        if (key != null && reg.OriginalValue != null)
                         {
-                            if (reg.OriginalValue is JsonElement elem)
-                            {
-                                if (elem.ValueKind == JsonValueKind.Number && elem.TryGetInt32(out int intVal))
-                                {
-                                    key.SetValue(reg.ValueName, intVal, reg.ValueKind);
-                                }
-                                else
-                                {
-                                    key.SetValue(reg.ValueName, elem.ToString(), reg.ValueKind);
-                                }
-                            }
-                            else
-                            {
-                                key.SetValue(reg.ValueName, reg.OriginalValue, reg.ValueKind);
-                            }
+                            object targetVal = ConvertJsonValueToRegistryType(reg.OriginalValue, reg.ValueKind);
+                            key.SetValue(reg.ValueName, targetVal, reg.ValueKind);
                         }
                     }
                     else
                     {
-                        using var key = root.OpenSubKey(parts[1], writable: true);
-                        key?.DeleteValue(reg.ValueName, false);
+                        if (!string.IsNullOrEmpty(reg.ValueName))
+                        {
+                            using var key = root.OpenSubKey(parts[1], writable: true);
+                            key?.DeleteValue(reg.ValueName, false);
+                        }
+                        else
+                        {
+                            try { root.DeleteSubKeyTree(parts[1], false); } catch { }
+                        }
                     }
                 }
                 catch { }
             }
+
 
             // 2. Restore Services via Win32 SCM
             foreach (var svc in package.ServiceEntries)
@@ -293,7 +341,7 @@ namespace Optimax.Core
 
         public bool DeleteBackup(string backupId)
         {
-            if (string.IsNullOrWhiteSpace(backupId)) return false;
+            if (string.IsNullOrWhiteSpace(backupId) || backupId.Contains("..") || backupId.Contains('/') || backupId.Contains('\\')) return false;
             try
             {
                 string dir = Path.Combine(_backupRoot, backupId);
@@ -306,5 +354,52 @@ namespace Optimax.Core
             catch { }
             return false;
         }
+
+        private static object ConvertJsonValueToRegistryType(object originalVal, RegistryValueKind valueKind)
+        {
+            if (originalVal is JsonElement elem)
+            {
+                switch (valueKind)
+                {
+                    case RegistryValueKind.DWord:
+                        if (elem.ValueKind == JsonValueKind.Number && elem.TryGetInt64(out long dL)) return (int)dL;
+                        if (int.TryParse(elem.ToString(), out int dI)) return dI;
+                        return 0;
+
+                    case RegistryValueKind.QWord:
+                        if (elem.ValueKind == JsonValueKind.Number && elem.TryGetInt64(out long qL)) return qL;
+                        if (long.TryParse(elem.ToString(), out long qVal)) return qVal;
+                        return 0L;
+
+                    case RegistryValueKind.Binary:
+                        if (elem.ValueKind == JsonValueKind.String)
+                        {
+                            try { return Convert.FromBase64String(elem.GetString()!); } catch { }
+                        }
+                        return Array.Empty<byte>();
+
+                    case RegistryValueKind.MultiString:
+                        if (elem.ValueKind == JsonValueKind.Array)
+                        {
+                            var list = new List<string>();
+                            foreach (var item in elem.EnumerateArray())
+                            {
+                                list.Add(item.ValueKind == JsonValueKind.String ? (item.GetString() ?? "") : item.ToString());
+                            }
+                            return list.ToArray();
+                        }
+                        return new[] { elem.ValueKind == JsonValueKind.String ? (elem.GetString() ?? "") : elem.ToString() };
+
+                    case RegistryValueKind.String:
+                    case RegistryValueKind.ExpandString:
+                    default:
+                        if (elem.ValueKind == JsonValueKind.String) return elem.GetString() ?? "";
+                        return elem.ToString();
+                }
+            }
+
+            return originalVal;
+        }
     }
 }
+

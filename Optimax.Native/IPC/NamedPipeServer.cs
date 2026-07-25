@@ -120,9 +120,10 @@ namespace Optimax.IPC
             {
                 if (GetNamedPipeClientProcessId(pipeHandle, out uint clientPid))
                 {
-                    // Allow same process or elevated admin process
-                    if (clientPid == Environment.ProcessId) return true;
-                    return IsProcessElevated(clientPid);
+                    if (clientPid > 0)
+                    {
+                        return IsProcessElevated(clientPid);
+                    }
                 }
             }
             catch { }
@@ -168,7 +169,7 @@ namespace Optimax.IPC
                 PipeDirection.InOut,
                 NamedPipeServerStream.MaxAllowedServerInstances,
                 PipeTransmissionMode.Byte,
-                PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly,
+                PipeOptions.Asynchronous,
                 0,
                 0);
 

@@ -12,6 +12,8 @@ namespace Optimax.IPC
     [JsonSerializable(typeof(RegistryStateSnapshot))]
     [JsonSerializable(typeof(ServiceStateSnapshot))]
     [JsonSerializable(typeof(List<DynamicCleaningRule>))]
+    [JsonSerializable(typeof(FileKeyEntry))]
+    [JsonSerializable(typeof(List<FileKeyEntry>))]
     [JsonSerializable(typeof(RegistryScanReport))]
     [JsonSerializable(typeof(RegistryScanItemResult))]
     [JsonSerializable(typeof(RegistryScanItemResult[]))]
