@@ -82,8 +82,9 @@ namespace Optimax.Core
                     if (rule != null) rules.Add(rule);
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                OptimaxLogger.Warn($"Failed to parse WinApp2.ini file: {iniFilePath}", ex);
                 return rules;
             }
 
@@ -102,7 +103,7 @@ namespace Optimax.Core
                     if (File.Exists(expanded) || Directory.Exists(expanded)) return true;
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace($"App detection failed for: {detectFile}", ex); }
 
             return false;
         }

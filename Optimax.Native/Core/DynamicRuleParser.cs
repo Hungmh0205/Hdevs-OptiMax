@@ -47,7 +47,7 @@ namespace Optimax.Core
             var excludeRegexes = new List<Regex>();
             foreach (var pattern in rule.ExcludeRegex)
             {
-                try { excludeRegexes.Add(new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Compiled)); } catch { }
+                try { excludeRegexes.Add(new Regex(pattern, RegexOptions.IgnoreCase | RegexOptions.Compiled)); } catch (Exception ex) { OptimaxLogger.Trace($"Invalid exclude regex pattern: {pattern}", ex); }
             }
 
             var entriesToScan = new List<FileKeyEntry>();
@@ -90,7 +90,7 @@ namespace Optimax.Core
                         if (!isExcluded) matchedFiles.Add(file);
                     }
                 }
-                catch { }
+                catch (Exception ex) { OptimaxLogger.Trace($"Failed to scan files for rule in: {expandedBase}", ex); }
             }
 
             return matchedFiles;

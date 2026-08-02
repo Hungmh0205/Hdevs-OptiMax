@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using System.ServiceProcess;
 using Microsoft.Win32;
 using Optimax.IPC;
@@ -141,9 +142,16 @@ namespace Optimax.Core
                             result.TotalApplied++;
                             break;
 
-                        case "-msimode":
+                        case "-cpuboost":
+                        case "-cpupriority":
                             if (!isDryRun) SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\PriorityControl", "Win32PrioritySeparation", 38);
-                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Kích hoạt MSI Mode & Ưu tiên ngắt CPU (Message Signaled Interrupts)");
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Tối ưu CPU Scheduling (Short Quantum, Variable, Foreground Boost)");
+                            result.TotalApplied++;
+                            break;
+
+                        case "-msimode":
+                            if (!isDryRun) EnableMsiModeForPciDevices(backupPkg, rollbackMgr);
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Kích hoạt MSI Mode (Message Signaled Interrupts) cho các thiết bị PCI hỗ trợ");
                             result.TotalApplied++;
                             break;
 
@@ -220,13 +228,13 @@ namespace Optimax.Core
 
                         case "-systemp":
                         case "-systempclean":
-                            int sysTempCount = isDryRun ? 0 : CleanThirdPartyJunkFolders();
-                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + $"Dọn dẹp Tệp Rác Hệ Thống & Ứng Dụng ({sysTempCount} tệp)");
+                            int sysTempCount = isDryRun ? 0 : CleanSystemTempFolders();
+                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + $"Dọn dẹp Tệp Rác Hệ Thống (TEMP, Prefetch, WER) ({sysTempCount} tệp)");
                             result.TotalApplied++;
                             break;
                     }
                 }
-                catch { }
+                catch (Exception ex) { OptimaxLogger.Warn($"Tweak '{cleanFlag}' failed", ex); }
             }
 
             if (!isDryRun && (backupPkg.RegistryEntries.Count > 0 || backupPkg.ServiceEntries.Count > 0))
@@ -267,7 +275,7 @@ namespace Optimax.Core
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Warn("Network adapter optimization failed", ex); }
         }
 
         private static int CleanThirdPartyJunkFolders()
@@ -300,10 +308,10 @@ namespace Optimax.Core
                                 File.Delete(file);
                                 cleanedFiles++;
                             }
-                            catch { }
+                            catch (Exception ex) { OptimaxLogger.Trace($"Failed to delete junk file: {file}", ex); }
                         }
                     }
-                    catch { }
+                    catch (Exception ex) { OptimaxLogger.Trace($"Failed to enumerate junk directory: {dir}", ex); }
                 }
             }
             return cleanedFiles;
@@ -317,10 +325,10 @@ namespace Optimax.Core
                 using var sc = new ServiceController(serviceName);
                 if (startMode == ServiceStartMode.Disabled && sc.Status == ServiceControllerStatus.Running)
                 {
-                    try { sc.Stop(); } catch { }
+                    try { sc.Stop(); } catch (Exception ex) { OptimaxLogger.Warn($"Failed to stop service '{serviceName}'", ex); }
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace($"Service '{serviceName}' not accessible for stop", ex); }
 
             try
             {
@@ -337,7 +345,7 @@ namespace Optimax.Core
                     key.SetValue("Start", startVal, RegistryValueKind.DWord);
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Warn($"Failed to set service '{serviceName}' start mode via registry", ex); }
         }
 
 
@@ -362,10 +370,10 @@ namespace Optimax.Core
                     RunCommand("powercfg", "-duplicatescheme e9a42b02-d5df-448d-aa00-03f14749eb61");
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace("Failed to check Ultimate Power Scheme availability", ex); }
         }
 
-        private static void RunCommand(string filename, string args)
+        private static void RunCommand(string filename, string args, int timeoutMs = 30000)
         {
             try
             {
@@ -377,9 +385,87 @@ namespace Optimax.Core
                     UseShellExecute = false
                 };
                 using var p = Process.Start(psi);
-                p?.WaitForExit(3000);
+                p?.WaitForExit(timeoutMs);
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Warn($"Failed to run command: {filename} {args}", ex); }
+        }
+
+        /// <summary>
+        /// Enable MSI Mode (Message Signaled Interrupts) for PCI devices that support it.
+        /// Enumerates HKLM\SYSTEM\CurrentControlSet\Enum\PCI and sets MSISupported=1
+        /// only for devices that already have the MessageSignaledInterruptProperties key.
+        /// </summary>
+        private static void EnableMsiModeForPciDevices(SystemStateBackupPackage package, TransactionalRollbackManager rollbackMgr)
+        {
+            try
+            {
+                string pciEnumPath = @"SYSTEM\CurrentControlSet\Enum\PCI";
+                using var pciKey = Registry.LocalMachine.OpenSubKey(pciEnumPath);
+                if (pciKey == null) return;
+
+                foreach (var deviceId in pciKey.GetSubKeyNames())
+                {
+                    using var deviceKey = pciKey.OpenSubKey(deviceId);
+                    if (deviceKey == null) continue;
+
+                    foreach (var instanceId in deviceKey.GetSubKeyNames())
+                    {
+                        string msiSubPath = $@"{pciEnumPath}\{deviceId}\{instanceId}\Device Parameters\Interrupt Management\MessageSignaledInterruptProperties";
+                        try
+                        {
+                            using var msiKey = Registry.LocalMachine.OpenSubKey(msiSubPath, writable: true);
+                            if (msiKey != null)
+                            {
+                                // Device supports MSI — snapshot current state and enable
+                                rollbackMgr.SnapshotRegistryKey(package, Registry.LocalMachine, msiSubPath, "MSISupported");
+                                msiKey.SetValue("MSISupported", 1, RegistryValueKind.DWord);
+                            }
+                        }
+                        catch (Exception ex) { OptimaxLogger.Trace($"MSI Mode: skipped device {deviceId}\\{instanceId}", ex); }
+                    }
+                }
+            }
+            catch (Exception ex) { OptimaxLogger.Warn("MSI Mode PCI enumeration failed", ex); }
+        }
+
+        /// <summary>
+        /// Clean system temp directories (TEMP, Windows\Temp, Prefetch, WER).
+        /// Separate from CleanThirdPartyJunkFolders which handles app-specific caches.
+        /// </summary>
+        private static int CleanSystemTempFolders()
+        {
+            int cleanedFiles = 0;
+            string winDir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+            if (string.IsNullOrEmpty(winDir)) winDir = "C:\\Windows";
+
+            string[] systemTempDirs = new[]
+            {
+                Environment.ExpandEnvironmentVariables("%TEMP%"),
+                Path.Combine(winDir, "Temp"),
+                Path.Combine(winDir, "Prefetch"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft\\Windows\\WER\\Temp"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft\\Windows\\WER\\ReportArchive"),
+                Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft\\Windows\\INetCache")
+            };
+
+            foreach (var dir in systemTempDirs)
+            {
+                if (!Directory.Exists(dir)) continue;
+                try
+                {
+                    foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
+                    {
+                        try
+                        {
+                            File.Delete(file);
+                            cleanedFiles++;
+                        }
+                        catch (Exception ex) { OptimaxLogger.Trace($"Failed to delete system temp file: {file}", ex); }
+                    }
+                }
+                catch (Exception ex) { OptimaxLogger.Trace($"Failed to enumerate system temp directory: {dir}", ex); }
+            }
+            return cleanedFiles;
         }
     }
 }

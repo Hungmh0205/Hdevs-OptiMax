@@ -18,7 +18,7 @@ namespace Optimax.Core
             {
                 NativeLibrary.SetDllImportResolver(typeof(BrowserOptimizer).Assembly, ResolveDllImport);
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace("SQLite NativeLibrary.SetDllImportResolver setup skipped", ex); }
         }
 
         private static IntPtr ResolveDllImport(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
@@ -62,7 +62,7 @@ namespace Optimax.Core
                     isSqliteAvailable = true;
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace("SQLite native library availability check failed", ex); }
 
             var targets = DiscoverBrowserDatabases();
 
@@ -72,7 +72,7 @@ namespace Optimax.Core
 
                 var (isLocked, lockingApps) = SafetyEngine.GetFileLockStatus(dbPath);
                 long originalSize = 0;
-                try { originalSize = new FileInfo(dbPath).Length; } catch { }
+                try { originalSize = new FileInfo(dbPath).Length; } catch (Exception ex) { OptimaxLogger.Trace($"Cannot read DB size: {dbPath}", ex); }
 
                 if (isLocked)
                 {
@@ -188,7 +188,7 @@ namespace Optimax.Core
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex) { OptimaxLogger.Trace($"Browser profile scan failed for: {baseDir}", ex); }
             }
 
             // Comprehensive Gecko targets (Firefox, Waterfox, LibreWolf, Thunderbird)
@@ -220,7 +220,7 @@ namespace Optimax.Core
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex) { OptimaxLogger.Trace($"Gecko profile scan failed for: {ffBase}", ex); }
             }
 
             return list;
@@ -255,8 +255,9 @@ namespace Optimax.Core
 
                 return new FileInfo(dbPath).Length;
             }
-            catch
+            catch (Exception ex)
             {
+                OptimaxLogger.Warn($"SQLite VACUUM failed for: {dbPath}", ex);
                 return originalSize;
             }
         }
@@ -275,7 +276,7 @@ namespace Optimax.Core
                     {
                         if (new FileInfo(f).Length == 0) File.Delete(f);
                     }
-                    catch { }
+                    catch (Exception ex) { OptimaxLogger.Trace($"Failed to clean journal file: {f}", ex); }
                 }
             }
         }

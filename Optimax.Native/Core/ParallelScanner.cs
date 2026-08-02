@@ -42,7 +42,7 @@ namespace Optimax.Core
 
                 if (!SafetyEngine.IsDriveReadyAndLocal(expanded)) return;
 
-                List<FileInfo> files = EnumerateFilesSafe(expanded);
+                var files = EnumerateFilesSafe(expanded);
 
                 foreach (var file in files)
                 {
@@ -63,7 +63,7 @@ namespace Optimax.Core
         private static void ProcessSingleFile(FileInfo file, bool isDryRun, ref long totalBytes, ConcurrentBag<ScanItemResult> results)
         {
             long size = 0;
-            try { size = file.Length; } catch { }
+            try { size = file.Length; } catch (Exception ex) { OptimaxLogger.Trace($"Cannot read file size: {file.FullName}", ex); }
 
             bool isLocked = false;
             string[] lockingApps = Array.Empty<string>();
@@ -81,7 +81,7 @@ namespace Optimax.Core
             {
                 isLocked = true;
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace($"File access check inconclusive: {file.FullName}", ex); }
 
             if (isLocked)
             {
@@ -116,34 +116,51 @@ namespace Optimax.Core
         }
 
 
-        private static List<FileInfo> EnumerateFilesSafe(string rootPath)
+        private static IEnumerable<FileInfo> EnumerateFilesSafe(string rootPath)
         {
-            var list = new List<FileInfo>();
             var dirsToProcess = new Queue<string>();
             dirsToProcess.Enqueue(rootPath);
 
             while (dirsToProcess.Count > 0)
             {
                 string currentDir = dirsToProcess.Dequeue();
+
+                IEnumerable<string> files;
                 try
                 {
-                    var dirInfo = new DirectoryInfo(currentDir);
-                    FileInfo[] files = dirInfo.GetFiles();
-                    list.AddRange(files);
+                    files = Directory.EnumerateFiles(currentDir);
+                }
+                catch (Exception ex)
+                {
+                    OptimaxLogger.Trace($"Cannot enumerate files in: {currentDir}", ex);
+                    continue;
+                }
 
-                    DirectoryInfo[] subDirs = dirInfo.GetDirectories();
-                    foreach (var sd in subDirs)
+                foreach (var filePath in files)
+                {
+                    FileInfo fi;
+                    try { fi = new FileInfo(filePath); }
+                    catch (Exception ex)
                     {
-                        dirsToProcess.Enqueue(sd.FullName);
+                        OptimaxLogger.Trace($"Cannot access file: {filePath}", ex);
+                        continue;
+                    }
+                    yield return fi;
+                }
+
+                try
+                {
+                    foreach (var subDir in Directory.EnumerateDirectories(currentDir))
+                    {
+                        dirsToProcess.Enqueue(subDir);
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Ignore subdirectories with Access Denied or not found
+                    // Expected for Access Denied on system directories
+                    OptimaxLogger.Trace($"Cannot enumerate subdirectories: {currentDir}", ex);
                 }
             }
-
-            return list;
         }
     }
 }

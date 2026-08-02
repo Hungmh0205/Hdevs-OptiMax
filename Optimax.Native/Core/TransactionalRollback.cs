@@ -13,56 +13,6 @@ namespace Optimax.Core
     {
         private readonly string _backupRoot;
 
-        [DllImport("advapi32.dll", EntryPoint = "OpenSCManagerW", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern IntPtr OpenSCManager(string? machineName, string? databaseName, uint dwDesiredAccess);
-
-        [DllImport("advapi32.dll", EntryPoint = "OpenServiceW", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern IntPtr OpenService(IntPtr hSCManager, string serviceName, uint dwDesiredAccess);
-
-        [DllImport("advapi32.dll", EntryPoint = "ChangeServiceConfigW", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern bool ChangeServiceConfig(
-            IntPtr hService,
-            uint dwServiceType,
-            uint dwStartType,
-            uint dwErrorControl,
-            string? binaryPathName,
-            string? loadOrderGroup,
-            IntPtr tagId,
-            string? dependencies,
-            string? serviceStartName,
-            string? password,
-            string? displayName);
-
-        [DllImport("advapi32.dll", EntryPoint = "ControlService", ExactSpelling = true, SetLastError = true)]
-        private static extern bool ControlService(IntPtr hService, uint dwControl, ref SERVICE_STATUS lpServiceStatus);
-
-        [DllImport("advapi32.dll", EntryPoint = "StartServiceW", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern bool StartService(IntPtr hService, uint dwNumServiceArgs, IntPtr lpServiceArgVectors);
-
-        [DllImport("advapi32.dll", EntryPoint = "CloseServiceHandle", ExactSpelling = true, SetLastError = true)]
-        private static extern bool CloseServiceHandle(IntPtr hSCObject);
-
-        private const uint SC_MANAGER_ALL_ACCESS = 0xF003F;
-        private const uint SERVICE_ALL_ACCESS = 0xF01FF;
-        private const uint SERVICE_NO_CHANGE = 0xFFFFFFFF;
-        private const uint SERVICE_CONTROL_STOP = 0x00000001;
-
-        private const uint SERVICE_AUTO_START = 0x00000002;
-        private const uint SERVICE_DEMAND_START = 0x00000003;
-        private const uint SERVICE_DISABLED = 0x00000004;
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct SERVICE_STATUS
-        {
-            public uint dwServiceType;
-            public uint dwCurrentState;
-            public uint dwControlsAccepted;
-            public uint dwWin32ExitCode;
-            public uint dwServiceSpecificExitCode;
-            public uint dwCheckPoint;
-            public uint dwWaitHint;
-        }
-
         public TransactionalRollbackManager()
         {
             _backupRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Optimax", "Backups");
@@ -156,7 +106,7 @@ namespace Optimax.Core
                     OriginalStatus = (int)sc.Status
                 });
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Warn($"Failed to snapshot service state: {serviceName}", ex); }
         }
 
         public string PersistPackage(SystemStateBackupPackage package)
@@ -211,11 +161,11 @@ namespace Optimax.Core
                         }
                         else
                         {
-                            try { root.DeleteSubKeyTree(parts[1], false); } catch { }
+                            try { root.DeleteSubKeyTree(parts[1], false); } catch (Exception ex) { OptimaxLogger.Error($"Failed to delete registry subtree: {parts[1]}", ex); }
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex) { OptimaxLogger.Error($"Failed to rollback registry key: {reg.KeyPath}\\{reg.ValueName}", ex); }
             }
 
 
@@ -224,61 +174,11 @@ namespace Optimax.Core
             {
                 try
                 {
-                    RestoreServiceState(svc.ServiceName, (ServiceStartMode)svc.OriginalStartMode, (ServiceControllerStatus)svc.OriginalStatus);
+                    ScmServiceManager.RestoreServiceState(svc.ServiceName, (ServiceStartMode)svc.OriginalStartMode, (ServiceControllerStatus)svc.OriginalStatus);
                 }
-                catch { }
+                catch (Exception ex) { OptimaxLogger.Error($"Failed to rollback service: {svc.ServiceName}", ex); }
             }
             return true;
-        }
-
-        private static bool RestoreServiceState(string serviceName, ServiceStartMode startMode, ServiceControllerStatus status)
-        {
-            IntPtr hSCM = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);
-            if (hSCM == IntPtr.Zero) return false;
-
-            try
-            {
-                IntPtr hSvc = OpenService(hSCM, serviceName, SERVICE_ALL_ACCESS);
-                if (hSvc == IntPtr.Zero) return false;
-
-                try
-                {
-                    uint winStartType = startMode switch
-                    {
-                        ServiceStartMode.Automatic => SERVICE_AUTO_START,
-                        ServiceStartMode.Manual => SERVICE_DEMAND_START,
-                        ServiceStartMode.Disabled => SERVICE_DISABLED,
-                        _ => SERVICE_DEMAND_START
-                    };
-
-                    ChangeServiceConfig(hSvc, SERVICE_NO_CHANGE, winStartType, SERVICE_NO_CHANGE, null, null, IntPtr.Zero, null, null, null, null);
-
-                    try
-                    {
-                        using var sc = new ServiceController(serviceName);
-                        if (status == ServiceControllerStatus.Running && sc.Status != ServiceControllerStatus.Running)
-                        {
-                            StartService(hSvc, 0, IntPtr.Zero);
-                        }
-                        else if (status == ServiceControllerStatus.Stopped && sc.Status != ServiceControllerStatus.Stopped)
-                        {
-                            SERVICE_STATUS statusStruct = new SERVICE_STATUS();
-                            ControlService(hSvc, SERVICE_CONTROL_STOP, ref statusStruct);
-                        }
-                    }
-                    catch { }
-
-                    return true;
-                }
-                finally
-                {
-                    CloseServiceHandle(hSvc);
-                }
-            }
-            finally
-            {
-                CloseServiceHandle(hSCM);
-            }
         }
 
         public List<BackupItemDto> GetAvailableBackups()
@@ -307,11 +207,11 @@ namespace Optimax.Core
                                 ));
                             }
                         }
-                        catch { }
+                        catch (Exception ex) { OptimaxLogger.Trace($"Failed to parse backup snapshot: {jsonPath}", ex); }
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Warn("Failed to enumerate backup directory", ex); }
 
             list.Sort((a, b) => b.Timestamp.CompareTo(a.Timestamp));
             return list;
@@ -351,7 +251,7 @@ namespace Optimax.Core
                     return true;
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Warn($"Failed to delete backup: {backupId}", ex); }
             return false;
         }
 

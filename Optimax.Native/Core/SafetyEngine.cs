@@ -96,8 +96,9 @@ namespace Optimax.Core
                 }
                 return (false, Array.Empty<string>());
             }
-            catch
+            catch (Exception ex)
             {
+                OptimaxLogger.Warn($"Restart Manager session failed for file: {filePath}", ex);
                 return (false, Array.Empty<string>());
             }
             finally
@@ -120,8 +121,9 @@ namespace Optimax.Core
                 var drive = new DriveInfo(root);
                 return drive.IsReady && drive.DriveType == DriveType.Fixed;
             }
-            catch
+            catch (Exception ex)
             {
+                OptimaxLogger.Trace($"Drive readiness check failed for: {path}", ex);
                 return false;
             }
         }

@@ -165,7 +165,7 @@ namespace Optimax.Core
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Warn("Dynamic UWP package enumeration via PowerShell failed", ex); }
             return uwpList;
         }
 
@@ -342,7 +342,7 @@ namespace Optimax.Core
                     if (val is int i && i == 0) return true;
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace("IsTelemetryDisabled registry check failed", ex); }
             return false;
         }
 
@@ -353,7 +353,7 @@ namespace Optimax.Core
                 using var key = Registry.LocalMachine.CreateSubKey(@"SOFTWARE\Policies\Microsoft\Windows\DataCollection", true);
                 key.SetValue("AllowTelemetry", 0, RegistryValueKind.DWord);
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Warn("Failed to set AllowTelemetry registry value", ex); }
 
             // Disable DiagTrack & dmwappushservice
             SetServiceDisabled("DiagTrack");
@@ -367,7 +367,7 @@ namespace Optimax.Core
                 using var key = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Policies\Microsoft\Windows\WindowsCopilot");
                 if (key != null && key.GetValue("TurnOffWindowsCopilot") is int i && i == 1) return true;
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace("IsCopilotDisabled registry check failed", ex); }
             return false;
         }
 
@@ -381,7 +381,7 @@ namespace Optimax.Core
                 using var key2 = Registry.CurrentUser.CreateSubKey(@"Software\Policies\Microsoft\Windows\WindowsCopilot", true);
                 key2.SetValue("TurnOffWindowsCopilot", 1, RegistryValueKind.DWord);
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Warn("Failed to disable Windows Copilot via registry", ex); }
         }
 
         private bool IsBingSearchDisabled()
@@ -391,7 +391,7 @@ namespace Optimax.Core
                 using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Search");
                 if (key != null && key.GetValue("BingSearchEnabled") is int i && i == 0) return true;
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace("IsBingSearchDisabled registry check failed", ex); }
             return false;
         }
 
@@ -405,7 +405,7 @@ namespace Optimax.Core
                 using var key2 = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Search", true);
                 key2.SetValue("BingSearchEnabled", 0, RegistryValueKind.DWord);
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Warn("Failed to disable Bing Search via registry", ex); }
         }
 
         private bool IsWidgetsDisabled()
@@ -415,7 +415,7 @@ namespace Optimax.Core
                 using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced");
                 if (key != null && key.GetValue("TaskbarDa") is int i && i == 0) return true;
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace("IsWidgetsDisabled registry check failed", ex); }
             return false;
         }
 
@@ -426,7 +426,7 @@ namespace Optimax.Core
                 using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced", true);
                 key.SetValue("TaskbarDa", 0, RegistryValueKind.DWord);
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Warn("Failed to disable Widgets via registry", ex); }
         }
 
         private bool IsAdvertisingDisabled()
@@ -436,7 +436,7 @@ namespace Optimax.Core
                 using var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo");
                 if (key != null && key.GetValue("Enabled") is int i && i == 0) return true;
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace("IsAdvertisingDisabled registry check failed", ex); }
             return false;
         }
 
@@ -447,7 +447,7 @@ namespace Optimax.Core
                 using var key = Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Windows\CurrentVersion\AdvertisingInfo", true);
                 key.SetValue("Enabled", 0, RegistryValueKind.DWord);
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Warn("Failed to disable Advertising ID via registry", ex); }
         }
 
         private int RemoveUwpBloatwareInternal()
@@ -487,7 +487,7 @@ namespace Optimax.Core
                     proc?.WaitForExit(20000);
                     count++;
                 }
-                catch { }
+                catch (Exception ex) { OptimaxLogger.Warn($"Failed to remove UWP bloatware package: {pkg}", ex); }
             }
             return count;
         }
@@ -509,8 +509,9 @@ namespace Optimax.Core
                 bool exited = proc?.WaitForExit(20000) ?? false;
                 return exited;
             }
-            catch
+            catch (Exception ex)
             {
+                OptimaxLogger.Warn($"Failed to remove specific UWP package: {packageName}", ex);
                 return false;
             }
         }
@@ -525,7 +526,7 @@ namespace Optimax.Core
                     key.SetValue("Start", 4, RegistryValueKind.DWord); // 4 = Disabled
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Warn($"Failed to disable service '{serviceName}' via registry", ex); }
 
             try
             {
@@ -535,7 +536,7 @@ namespace Optimax.Core
                     sc.Stop();
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace($"Failed to stop service '{serviceName}'", ex); }
         }
 
         #endregion

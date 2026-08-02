@@ -5,7 +5,7 @@
 ![Architecture](https://img.shields.io/badge/Architecture-Win32%20%7C%20RestartManager%20%7C%20IPC-brightgreen.svg?style=for-the-badge)
 ![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)
 
-**OPTIMAX Native** là giải pháp tối ưu hóa hiệu năng và dọn dẹp hệ thống Windows thế hệ mới, được phát triển dưới dạng **Native Executable (.NET Native AOT / Win32)** và giao diện **Desktop WPF App (`Optimax.UI`)**. Công cụ có tốc độ khởi động siêu nhanh (< 10ms), tiêu thụ ít tài nguyên RAM (~15 - 30 MB), tuyệt đối không phụ thuộc vào PowerShell hay Node.js runtime, và tuân thủ 100% **Nguyên Tắc An Toàn Hệ Thống (Zero-Risk Architecture)** của Microsoft Windows.
+**OPTIMAX Native** là giải pháp tối ưu hóa hiệu năng và dọn dẹp hệ thống Windows thế hệ mới, được phát triển dưới dạng **Native Executable (.NET Native AOT / Win32)** và giao diện **Desktop WPF App (`Optimax.UI`)**. Công cụ có tốc độ khởi động siêu nhanh (< 10ms), tiêu thụ ít tài nguyên RAM (~15 - 30 MB), sử dụng hoàn toàn **Win32 Native API** (không phụ thuộc vào Node.js runtime; PowerShell chỉ được sử dụng duy nhất cho tác vụ quản lý gói UWP/Appx do hạn chế của Windows API), và tuân thủ 100% **Nguyên Tắc An Toàn Hệ Thống (Zero-Risk Architecture)** của Microsoft Windows.
 
 ---
 
@@ -33,7 +33,7 @@
 - **Deep Safe Registry Cleaner ([`DeepRegistryScanner.cs`](file:///d:/optimize/Optimax.Native/Core/DeepRegistryScanner.cs)):** Quét & dọn dẹp an toàn SharedDLLs mồ côi, App Paths sai lệch, MUICache rác.
 - **Secure File Shredder ([`SecureFileShredder.cs`](file:///d:/optimize/Optimax.Native/Core/SecureFileShredder.cs)):** Tiêu hủy dữ liệu an toàn theo tiêu chuẩn quân đội DoD 5220.22-M (3 lượt ghi đè), ZeroFill và RandomFill.
 - **Windows Debloater Engine ([`WindowsDebloater.cs`](file:///d:/optimize/Optimax.Native/Core/WindowsDebloater.cs)):** Vô hiệu hóa Telemetry, Windows Copilot AI, Bing Search trong Start Menu, Taskbar Widgets, Advertising ID và gỡ bỏ ứng dụng UWP Bloatware rác.
-- **System OS Tweaks Engine ([`SystemTweaksEngine.cs`](file:///d:/optimize/Optimax.Native/Core/SystemTweaksEngine.cs)):** Tinh chỉnh MSI Mode ngắt CPU, TRIM ổ SSD/NVMe, Global Timer Resolution (0.5ms), MMCSS Games Priority, QoS Network Ack Frequency, VSS Shadow Copies.
+- **System OS Tweaks Engine ([`SystemTweaksEngine.cs`](file:///d:/optimize/Optimax.Native/Core/SystemTweaksEngine.cs)):** Tinh chỉnh CPU Scheduling Priority, TRIM ổ SSD/NVMe, Global Timer Resolution (0.5ms), MMCSS Games Priority, QoS Network Ack Frequency, VSS Shadow Copies.
 - **Named Pipe IPC Server ([`NamedPipeServer.cs`](file:///d:/optimize/Optimax.Native/IPC/NamedPipeServer.cs)):** Giao tiếp IPC bảo mật qua `\\.\pipe\OptimaxIPC` (NDJSON Streaming).
 
 ---
@@ -43,7 +43,7 @@
 ### 📋 Yêu cầu Hệ thống
 - **Hệ điều hành:** Windows 10 / Windows 11 (64-bit).
 - **Quyền hạn:** Quản trị viên (Administrator).
-- **Yêu cầu Runtime:** KHÔNG CẦN (.NET Native AOT tự đóng gói thành 1 file `.exe` duy nhất).
+- **Yêu cầu Runtime:** KHÔNG CẦN (.NET Native AOT tự đóng gói thành 1 file `.exe` duy nhất). PowerShell chỉ cần thiết cho tính năng gỡ bỏ ứng dụng UWP Bloatware.
 
 ---
 
@@ -120,7 +120,7 @@ d:\optimize\
 │   │   ├── BrowserOptimizer.cs     # Chromium & Firefox SQLite Database Vacuum
 │   │   ├── SecureFileShredder.cs   # DoD 5220.22-M 3-Pass Secure File Shredder
 │   │   ├── WindowsDebloater.cs     # Telemetry, Copilot, Bing, Widgets & UWP Debloater
-│   │   ├── SystemTweaksEngine.cs   # OS Tweaks Engine (MSI, TRIM, MMCSS, TimerRes, QoS)
+│   │   ├── SystemTweaksEngine.cs   # OS Tweaks Engine (CPU Priority, TRIM, MMCSS, TimerRes, QoS)
 │   │   ├── StartupOptimizer.cs     # Startup & Service Risk Assessor & Manager
 │   │   ├── RealtimeMonitorDaemon.cs# Temp Junk Realtime Monitoring Daemon
 │   │   └── WinApp2IniParser.cs     # WinApp2.ini Ruleset Importer & Parser

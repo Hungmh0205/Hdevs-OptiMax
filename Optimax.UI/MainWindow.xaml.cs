@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Optimax.IPC;
 
@@ -268,7 +269,7 @@ namespace Optimax.UI
                 if (dialog.ShowDialog() == true)
                 {
                     Log($"Đã chọn tệp WinApp2.ini: {dialog.FileName}");
-                    var res = await IpcClient.SendCommandAsync("import-winapp2", targetId: dialog.FileName);
+                    var res = await IpcClient.SendCommandAsync("import-winapp2", targetId: dialog.FileName, onProgressChunk: OnIpcProgressChunk);
                     LogResponse(res);
                 }
             }
@@ -284,7 +285,7 @@ namespace Optimax.UI
             SetUiBusy(true, "Đang thu hồi bộ nhớ RAM Kernel Native");
             try
             {
-                var res = await IpcClient.SendCommandAsync("trim-ram");
+                var res = await IpcClient.SendCommandAsync("trim-ram", onProgressChunk: OnIpcProgressChunk);
                 LogResponse(res);
                 _ = FetchSystemStatsAsync();
             }
@@ -299,7 +300,7 @@ namespace Optimax.UI
             SetUiBusy(true, "Đang quét & dọn dẹp Registry an toàn");
             try
             {
-                var res = await IpcClient.SendCommandAsync("clean-registry");
+                var res = await IpcClient.SendCommandAsync("clean-registry", onProgressChunk: OnIpcProgressChunk);
                 LogResponse(res);
             }
             finally
@@ -313,7 +314,7 @@ namespace Optimax.UI
             SetUiBusy(true, "Đang Vacuum SQLite cơ sở dữ liệu các trình duyệt");
             try
             {
-                var res = await IpcClient.SendCommandAsync("clean-browser");
+                var res = await IpcClient.SendCommandAsync("clean-browser", onProgressChunk: OnIpcProgressChunk);
                 LogResponse(res);
             }
             finally
@@ -370,7 +371,7 @@ namespace Optimax.UI
                 var flagsArray = flags.ToArray();
                 bool isDryRun = chk_DryRun != null && chk_DryRun.IsChecked == true;
                 Log($"BẮT ĐẦU THỰC THI TINH CHỈNH VỚI {flagsArray.Length} CỜ CẤU HÌNH NATIVE (Dry-Run Mode = {isDryRun})...", "warn");
-                var res = await IpcClient.SendCommandAsync("clean", isDryRun: isDryRun, flags: flagsArray);
+                var res = await IpcClient.SendCommandAsync("clean", isDryRun: isDryRun, flags: flagsArray, onProgressChunk: OnIpcProgressChunk);
                 LogResponse(res);
             }
             finally
@@ -534,7 +535,7 @@ namespace Optimax.UI
                 {
                     var ids = selectedItems.Select(i => i.Id).ToArray();
                     Log($"BẮT ĐẦU ÁP DỤNG DEBLOAT WINDOWS CHO {ids.Length} HẠNG MỤC ĐÃ CHỌN...", "warn");
-                    var res = await IpcClient.SendCommandAsync("apply-debloat", flags: ids);
+                    var res = await IpcClient.SendCommandAsync("apply-debloat", flags: ids, onProgressChunk: OnIpcProgressChunk);
                     LogResponse(res);
                     _ = FetchDebloatItemsAsync();
                 }
@@ -576,7 +577,7 @@ namespace Optimax.UI
                 try
                 {
                     Log($"ĐANG TIÊU HỦY AN TOÀN TỆP/THƯ MỤC [{targetPath}] THUẬT TOÁN [{algo.ToUpper()}]...", "warn");
-                    var res = await IpcClient.SendCommandAsync("shred", targetId: targetPath, flags: new[] { algo });
+                    var res = await IpcClient.SendCommandAsync("shred", targetId: targetPath, flags: new[] { algo }, onProgressChunk: OnIpcProgressChunk);
                     LogResponse(res);
                     if (res.Success)
                     {
@@ -605,7 +606,7 @@ namespace Optimax.UI
             try
             {
                 Log($"ĐANG KHÔI PHỤC SNAPSHOT HỆ THỐNG THEO MÃ BACKUP ID [{backupId}]...", "warn");
-                var res = await IpcClient.SendCommandAsync("rollback", backupId: backupId);
+                var res = await IpcClient.SendCommandAsync("rollback", backupId: backupId, onProgressChunk: OnIpcProgressChunk);
                 LogResponse(res);
                 if (res.Success)
                 {
@@ -634,7 +635,7 @@ namespace Optimax.UI
                 try
                 {
                     Log($"ĐANG XÓA SNAPSHOT HỆ THỐNG MÃ ID [{backupId}]...", "warn");
-                    var res = await IpcClient.SendCommandAsync("delete-backup", backupId: backupId);
+                    var res = await IpcClient.SendCommandAsync("delete-backup", backupId: backupId, onProgressChunk: OnIpcProgressChunk);
                     LogResponse(res);
                     if (res.Success)
                     {
@@ -689,7 +690,7 @@ namespace Optimax.UI
             try
             {
                 Log("BẮT ĐẦU TẠO SNAPSHOT SAO LƯU TRẠNG THÁI HỆ THỐNG NATIVE (BẢO VỆ BẢO MẬT)...", "warn");
-                var res = await IpcClient.SendCommandAsync("create-snapshot");
+                var res = await IpcClient.SendCommandAsync("create-snapshot", onProgressChunk: OnIpcProgressChunk);
                 LogResponse(res);
                 if (res.Success)
                 {
@@ -757,6 +758,116 @@ namespace Optimax.UI
             Log("[HỆ THỐNG] Đã xóa toàn bộ nhật ký hiển thị trên màn hình.", "info");
         }
 
+        private Storyboard? _scanBeamStoryboard;
+        private DispatcherTimer? _progressAnimationTimer;
+        private int _currentAnimatedPercent = 15;
+
+        private void StartScanAnimation()
+        {
+            if (ScanBeamTransform != null)
+            {
+                if (_scanBeamStoryboard == null)
+                {
+                    var anim = new DoubleAnimation
+                    {
+                        From = -180,
+                        To = 760,
+                        Duration = TimeSpan.FromSeconds(1.6),
+                        RepeatBehavior = RepeatBehavior.Forever,
+                        AutoReverse = true
+                    };
+
+                    Storyboard.SetTarget(anim, ScanBeamTransform);
+                    Storyboard.SetTargetProperty(anim, new PropertyPath(TranslateTransform.XProperty));
+
+                    _scanBeamStoryboard = new Storyboard();
+                    _scanBeamStoryboard.Children.Add(anim);
+                }
+
+                _scanBeamStoryboard.Begin();
+            }
+
+            _currentAnimatedPercent = 15;
+            if (PbScanProgress != null) PbScanProgress.Value = _currentAnimatedPercent;
+            if (TxtScanPercent != null) TxtScanPercent.Text = $"{_currentAnimatedPercent}%";
+
+            if (_progressAnimationTimer == null)
+            {
+                _progressAnimationTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(180) };
+                _progressAnimationTimer.Tick += (s, e) =>
+                {
+                    if (_currentAnimatedPercent < 92)
+                    {
+                        _currentAnimatedPercent += _currentAnimatedPercent switch
+                        {
+                            < 40 => 6,
+                            < 70 => 4,
+                            < 85 => 2,
+                            _ => 1
+                        };
+                        if (PbScanProgress != null) PbScanProgress.Value = _currentAnimatedPercent;
+                        if (TxtScanPercent != null) TxtScanPercent.Text = $"{_currentAnimatedPercent}%";
+                    }
+                };
+            }
+            _progressAnimationTimer.Start();
+        }
+
+        private void StopScanAnimation(bool isComplete = true)
+        {
+            _scanBeamStoryboard?.Stop();
+            _progressAnimationTimer?.Stop();
+
+            if (isComplete)
+            {
+                _currentAnimatedPercent = 100;
+                if (PbScanProgress != null) PbScanProgress.Value = 100;
+                if (TxtScanPercent != null) TxtScanPercent.Text = "100%";
+            }
+        }
+
+        private void OnIpcProgressChunk(IPCStreamChunk chunk)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                UpdateScanChunk(chunk);
+            });
+        }
+
+        private void UpdateScanChunk(IPCStreamChunk chunk)
+        {
+            if (chunk == null) return;
+            if (chunk.ProgressPct > _currentAnimatedPercent)
+            {
+                _currentAnimatedPercent = chunk.ProgressPct;
+                if (PbScanProgress != null) PbScanProgress.Value = Math.Min(100, Math.Max(0, _currentAnimatedPercent));
+                if (TxtScanPercent != null) TxtScanPercent.Text = $"{_currentAnimatedPercent}%";
+            }
+
+            if (TxtScanStatus != null && !string.IsNullOrEmpty(chunk.Message))
+            {
+                TxtScanStatus.Text = chunk.Message;
+            }
+
+            if (!string.IsNullOrEmpty(chunk.Message))
+            {
+                Log(chunk.Message, "info");
+                if (TxtScanRealtimeLog != null)
+                {
+                    TxtScanRealtimeLog.AppendText($"[{DateTime.Now:HH:mm:ss}] {chunk.Message}\n");
+                    TxtScanRealtimeLog.ScrollToEnd();
+                }
+            }
+        }
+
+        private void BtnCloseScanOverlay_Click(object sender, RoutedEventArgs e)
+        {
+            if (ModalScanOverlay != null)
+            {
+                ModalScanOverlay.Visibility = Visibility.Collapsed;
+            }
+        }
+
         private void SetUiBusy(bool isBusy, string statusMessage = "")
         {
             if (BtnExecuteCustom != null) BtnExecuteCustom.IsEnabled = !isBusy;
@@ -774,9 +885,45 @@ namespace Optimax.UI
 
             Mouse.OverrideCursor = isBusy ? Cursors.Wait : null;
 
-            if (isBusy && !string.IsNullOrEmpty(statusMessage))
+            if (isBusy)
             {
-                Log($"⏳ [ĐANG THỰC THI] {statusMessage}...", "warn");
+                if (ModalScanOverlay != null)
+                {
+                    ModalScanOverlay.Visibility = Visibility.Visible;
+                    if (TxtScanTaskTitle != null) TxtScanTaskTitle.Text = string.IsNullOrEmpty(statusMessage) ? "Đang quét & tối ưu hóa hệ thống..." : statusMessage;
+                    if (TxtScanStatus != null) TxtScanStatus.Text = "Đang khởi chạy tiến trình Native Kernel Engine...";
+                    if (TxtScanStepCount != null) TxtScanStepCount.Text = "Tiến độ: Đang xử lý...";
+                    if (TxtScanRealtimeLog != null)
+                    {
+                        TxtScanRealtimeLog.Clear();
+                        TxtScanRealtimeLog.AppendText($"[{DateTime.Now:HH:mm:ss}] 🚀 BẮT ĐẦU TỐI ƯU HÓA: {statusMessage}\n");
+                        TxtScanRealtimeLog.AppendText($"[{DateTime.Now:HH:mm:ss}] 📡 Kết nối IPC Named Pipe: \\\\.\\pipe\\OptimaxIPC\n");
+                    }
+                    if (PanelScanRunning != null) PanelScanRunning.Visibility = Visibility.Visible;
+                    if (PanelScanComplete != null) PanelScanComplete.Visibility = Visibility.Collapsed;
+
+                    StartScanAnimation();
+                }
+
+                if (!string.IsNullOrEmpty(statusMessage))
+                {
+                    Log($"⏳ [ĐANG THỰC THI] {statusMessage}...", "warn");
+                }
+            }
+            else
+            {
+                if (TxtScanStatus != null) TxtScanStatus.Text = "✓ Đã hoàn tất tác vụ thành công!";
+                if (TxtScanStepCount != null) TxtScanStepCount.Text = "Hoàn tất";
+                if (TxtScanRealtimeLog != null)
+                {
+                    TxtScanRealtimeLog.AppendText($"[{DateTime.Now:HH:mm:ss}] [✓] HOÀN TẤT TIẾN TRÌNH TỐI ƯU HÓA HỆ THỐNG!\n");
+                    TxtScanRealtimeLog.ScrollToEnd();
+                }
+
+                StopScanAnimation(true);
+
+                if (PanelScanRunning != null) PanelScanRunning.Visibility = Visibility.Collapsed;
+                if (PanelScanComplete != null) PanelScanComplete.Visibility = Visibility.Visible;
             }
         }
 

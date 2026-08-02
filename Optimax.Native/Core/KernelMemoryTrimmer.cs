@@ -76,25 +76,7 @@ namespace Optimax.Core
         private const uint PROCESS_SET_QUOTA = 0x0100;
         private const uint PROCESS_QUERY_INFORMATION = 0x0400;
 
-        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
-        private class MEMORYSTATUSEX
-        {
-            public uint dwLength;
-            public uint dwMemoryLoad;
-            public ulong ullTotalPhys;
-            public ulong ullAvailPhys;
-            public ulong ullTotalPageFile;
-            public ulong ullAvailPageFile;
-            public ulong ullTotalVirtual;
-            public ulong ullAvailVirtual;
-            public ulong ullAvailExtendedVirtual;
-            public MEMORYSTATUSEX() { dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>(); }
 
-        }
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
-        [return: MarshalAs(UnmanagedType.Bool)]
-        private static extern bool GlobalMemoryStatusEx([In, Out] MEMORYSTATUSEX lpBuffer);
 
         private static uint GetForegroundProcessId()
         {
@@ -182,7 +164,7 @@ namespace Optimax.Core
                         _lastStandbyPurgeTime = DateTime.UtcNow;
                     }
                 }
-                catch { }
+                catch (Exception ex) { OptimaxLogger.Error("NtSetSystemInformation Standby List purge failed", ex); }
             }
 
             // 2. Selective Working Set Trimming
@@ -221,9 +203,10 @@ namespace Optimax.Core
                             }
                         }
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        // Ignore processes where access is denied
+                        // Expected for system-protected processes where access is denied
+                        OptimaxLogger.Trace($"Working set trim denied for PID {proc.Id}", ex);
                     }
                     finally
                     {
@@ -247,12 +230,12 @@ namespace Optimax.Core
             try
             {
                 MEMORYSTATUSEX memStatus = new MEMORYSTATUSEX();
-                if (GlobalMemoryStatusEx(memStatus))
+                if (ScmServiceManager.GlobalMemoryStatusEx(memStatus))
                 {
                     return (long)memStatus.ullAvailPhys;
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace("GlobalMemoryStatusEx call failed", ex); }
             return 0;
         }
     }

@@ -46,7 +46,7 @@ namespace Optimax.Core
                     ));
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Warn("Failed to enumerate Windows services", ex); }
 
             return new StartupOptimizerReport(startupList.ToArray(), serviceList.ToArray());
         }
@@ -133,7 +133,7 @@ namespace Optimax.Core
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Warn($"Failed to toggle startup item: {itemId}", ex); }
 
             return false;
         }
@@ -186,7 +186,7 @@ namespace Optimax.Core
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace($"Failed to scan registry Run key: {locationName}", ex); }
         }
 
         private static void ScanStartupFolder(string folderPath, string locationName, List<StartupItemResult> list)
@@ -202,62 +202,13 @@ namespace Optimax.Core
                     list.Add(new StartupItemResult($"Folder\\{file}", name, file, locationName, isEnabled, "Low"));
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace($"Failed to scan startup folder: {folderPath}", ex); }
         }
 
         private static bool RestoreServiceState(string serviceName, ServiceStartMode startMode, ServiceControllerStatus status)
         {
             // Use Win32 SCM P/Invoke directly
             return ScmServiceManager.SetServiceConfig(serviceName, startMode);
-        }
-    }
-
-    internal static class ScmServiceManager
-    {
-
-        [System.Runtime.InteropServices.DllImport("advapi32.dll", EntryPoint = "OpenSCManagerW", ExactSpelling = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
-        private static extern IntPtr OpenSCManager(string? machineName, string? databaseName, uint dwDesiredAccess);
-
-        [System.Runtime.InteropServices.DllImport("advapi32.dll", EntryPoint = "OpenServiceW", ExactSpelling = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
-        private static extern IntPtr OpenService(IntPtr hSCManager, string serviceName, uint dwDesiredAccess);
-
-        [System.Runtime.InteropServices.DllImport("advapi32.dll", EntryPoint = "ChangeServiceConfigW", ExactSpelling = true, CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
-        private static extern bool ChangeServiceConfig(IntPtr hService, uint dwServiceType, uint dwStartType, uint dwErrorControl, string? binaryPathName, string? loadOrderGroup, IntPtr tagId, string? dependencies, string? serviceStartName, string? password, string? displayName);
-
-        [System.Runtime.InteropServices.DllImport("advapi32.dll", EntryPoint = "CloseServiceHandle", ExactSpelling = true, SetLastError = true)]
-        private static extern bool CloseServiceHandle(IntPtr hSCObject);
-
-        public static bool SetServiceConfig(string serviceName, ServiceStartMode startMode)
-        {
-            IntPtr hSCM = OpenSCManager(null, null, 0xF003F);
-            if (hSCM == IntPtr.Zero) return false;
-
-            try
-            {
-                IntPtr hSvc = OpenService(hSCM, serviceName, 0xF01FF);
-                if (hSvc == IntPtr.Zero) return false;
-
-                try
-                {
-                    uint winStartType = startMode switch
-                    {
-                        ServiceStartMode.Automatic => 0x00000002,
-                        ServiceStartMode.Manual => 0x00000003,
-                        ServiceStartMode.Disabled => 0x00000004,
-                        _ => 0x00000003
-                    };
-
-                    return ChangeServiceConfig(hSvc, 0xFFFFFFFF, winStartType, 0xFFFFFFFF, null, null, IntPtr.Zero, null, null, null, null);
-                }
-                finally
-                {
-                    CloseServiceHandle(hSvc);
-                }
-            }
-            finally
-            {
-                CloseServiceHandle(hSCM);
-            }
         }
     }
 }

@@ -104,7 +104,7 @@ namespace Optimax.Core
                             }
                         }
                     }
-                    catch { }
+                    catch (Exception ex) { OptimaxLogger.Trace($"Failed to clean registry item: {item.Hive}\\{item.SubKey}\\{item.ValueName}", ex); }
                 }
             }
 
@@ -144,7 +144,7 @@ namespace Optimax.Core
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace($"CLSID scan failed on {hiveName}\\{relSubKey}", ex); }
         }
 
         private static void ScanSharedDlls(RegistryKey rootKey, string subKeyPath, List<RegistryScanItemResult> results)
@@ -169,7 +169,7 @@ namespace Optimax.Core
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace($"SharedDLLs scan failed: {subKeyPath}", ex); }
         }
 
         private static void ScanMuiCache(RegistryKey rootKey, string subKeyPath, List<RegistryScanItemResult> results)
@@ -198,7 +198,7 @@ namespace Optimax.Core
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace($"MuiCache scan failed: {subKeyPath}", ex); }
         }
 
         private static void ScanUninstallKeys(RegistryKey rootKey, string subKeyPath, List<RegistryScanItemResult> results)
@@ -227,7 +227,7 @@ namespace Optimax.Core
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace($"Uninstall keys scan failed: {subKeyPath}", ex); }
         }
 
         private static void ScanTypeLibs(RegistryKey rootKey, string subKeyPath, List<RegistryScanItemResult> results)
@@ -269,7 +269,7 @@ namespace Optimax.Core
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace($"TypeLib scan failed: {subKeyPath}", ex); }
         }
 
         private static void ScanAppPaths(RegistryKey rootKey, string subKeyPath, List<RegistryScanItemResult> results)
@@ -298,7 +298,7 @@ namespace Optimax.Core
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace($"AppPaths scan failed: {subKeyPath}", ex); }
         }
 
         private static void ScanFontsAndHelp(RegistryKey rootKey, List<RegistryScanItemResult> results)
@@ -332,7 +332,7 @@ namespace Optimax.Core
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace("Fonts registry scan failed", ex); }
 
             // Help Files
             try
@@ -358,7 +358,7 @@ namespace Optimax.Core
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace("Help files registry scan failed", ex); }
         }
 
         private static bool IsInvalidFilePath(string rawPath)

@@ -59,7 +59,7 @@ namespace Optimax.Core
                         _watchers.Add(watcher);
                         Console.WriteLine($"[REALTIME EVENT MONITOR] Attached Event Listener to: {dir}");
                     }
-                    catch { }
+                    catch (Exception ex) { OptimaxLogger.Warn($"Failed to attach FileSystemWatcher to: {dir}", ex); }
                 }
             }
 
@@ -91,7 +91,7 @@ namespace Optimax.Core
                     _accumulatedFileSizes[e.FullPath] = info.Length;
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace($"File change event handler error: {e.FullPath}", ex); }
 
             ScheduleDebouncedCheck();
         }
@@ -156,11 +156,11 @@ namespace Optimax.Core
                 await pipeClient.ConnectAsync(1000);
 
                 using var writer = new StreamWriter(pipeClient) { AutoFlush = true };
-                var req = new IPCRequest("monitor-event", false, null, null, null, true, 2, null);
+                var req = new IPCRequest("monitor-event", false, null, null, notification.Message, true, 2, null);
                 string reqJson = JsonSerializer.Serialize(req, OptimaxJsonContext.Default.IPCRequest);
                 await writer.WriteLineAsync(reqJson.AsMemory());
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace("IPC monitor notification send failed", ex); }
         }
 
 
@@ -179,7 +179,7 @@ namespace Optimax.Core
                     FileInfo[] files = dirInfo.GetFiles();
                     foreach (var file in files)
                     {
-                        try { total += file.Length; } catch { }
+                        try { total += file.Length; } catch (Exception ex) { OptimaxLogger.Trace($"Cannot read file size in monitor: {file.FullName}", ex); }
                     }
 
                     DirectoryInfo[] subDirs = dirInfo.GetDirectories();
@@ -188,7 +188,7 @@ namespace Optimax.Core
                         queue.Enqueue(sd.FullName);
                     }
                 }
-                catch { }
+                catch (Exception ex) { OptimaxLogger.Trace($"Directory size calculation failed for: {current}", ex); }
             }
 
             return total;

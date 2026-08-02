@@ -8,6 +8,7 @@ using System.Security.Principal;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Optimax.Core;
 
 namespace Optimax.IPC
 {
@@ -126,7 +127,7 @@ namespace Optimax.IPC
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace("IPC client authorization check failed", ex); }
             return false;
         }
 
@@ -177,7 +178,7 @@ namespace Optimax.IPC
             {
                 pipe.SetAccessControl(pipeSecurity);
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace("PipeSecurity SetAccessControl skipped (expected on some OS versions)", ex); }
 
             return pipe;
         }

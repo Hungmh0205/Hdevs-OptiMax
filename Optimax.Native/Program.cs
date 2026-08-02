@@ -21,7 +21,10 @@ namespace Optimax
                 Console.OutputEncoding = System.Text.Encoding.UTF8;
                 Console.InputEncoding = System.Text.Encoding.UTF8;
             }
-            catch { }
+            catch
+            {
+                // Console encoding setup is non-critical, expected to fail in some environments
+            }
 
             bool isDryRun = false;
             string? rollbackId = null;
@@ -371,13 +374,15 @@ namespace Optimax
                 Console.CancelKeyPress += (s, e) => { e.Cancel = true; cts.Cancel(); };
 
                 var ipcServer = new NamedPipeServer();
-                await ipcServer.StartServerAsync(async (req) =>
+                await ipcServer.StartServerStreamAsync(async (req, sendChunk) =>
                 {
                     if (req.Command == "scan" || req.Command == "clean")
                     {
+                        await sendChunk(new IPCStreamChunk(false, 1, 25, "Đang kết nối IPC Named Pipe Engine & Kiểm tra cờ cấu hình...", null));
                         string tweakMsg = "";
                         if (req.Flags != null && req.Flags.Length > 0)
                         {
+                            await sendChunk(new IPCStreamChunk(false, 2, 45, $"Đang áp dụng {req.Flags.Length} tinh chỉnh Native OS...", null));
                             var tweaksEngine = new SystemTweaksEngine();
                             var tweakRes = tweaksEngine.ExecuteTweaks(req.Flags, req.IsDryRun);
                             if (tweakRes.TotalApplied > 0)
@@ -385,7 +390,9 @@ namespace Optimax
                                 tweakMsg = $" (Đã áp dụng {tweakRes.TotalApplied} tinh chỉnh HĐH: {string.Join(", ", tweakRes.Messages)})";
                             }
                         }
+                        await sendChunk(new IPCStreamChunk(false, 3, 70, "Đang thực thi quét song song các thư mục rác hệ thống (Temp, Prefetch)...", null));
                         var report = await PerformScanAsync(req.IsDryRun, req.RulesFile ?? rulesFile);
+                        await sendChunk(new IPCStreamChunk(false, 4, 95, "Đang tổng hợp báo cáo và dọn dẹp bộ nhớ đệm...", null));
                         return new IPCResponse(true, "Scan completed" + tweakMsg, JsonSerializer.Serialize(report, OptimaxJsonContext.Default.ScanReport));
                     }
                     else if (req.Command == "schedule-daily")
@@ -434,19 +441,28 @@ namespace Optimax
                     }
                     else if (req.Command == "clean-registry")
                     {
+                        await sendChunk(new IPCStreamChunk(false, 1, 35, "Đang khởi tạo Deep Registry Scanner...", null));
                         var regScanner = new DeepRegistryScanner();
+                        await sendChunk(new IPCStreamChunk(false, 2, 70, "Đang quét và dọn dẹp các mục Registry mồ côi...", null));
                         var regReport = regScanner.ScanAndClean(req.IsDryRun);
+                        await sendChunk(new IPCStreamChunk(false, 3, 95, "Đang tạo bản sao lưu Snapshot Registry khôi phục...", null));
                         return new IPCResponse(true, "Registry scan completed", JsonSerializer.Serialize(regReport, OptimaxJsonContext.Default.RegistryScanReport));
                     }
                     else if (req.Command == "clean-browser")
                     {
+                        await sendChunk(new IPCStreamChunk(false, 1, 40, "Đang kiểm tra tiến trình trình duyệt (Chrome, Edge, Firefox, Brave)...", null));
                         var bEngine = new BrowserOptimizer();
+                        await sendChunk(new IPCStreamChunk(false, 2, 75, "Đang thực thi Vacuum SQLite tối ưu dung lượng cơ sở dữ liệu...", null));
                         var bReport = bEngine.OptimizeAllBrowsers(req.IsDryRun);
+                        await sendChunk(new IPCStreamChunk(false, 3, 95, "Hoàn tất giải phóng dung lượng dữ liệu trình duyệt!", null));
                         return new IPCResponse(true, "Browser SQLite optimization completed", JsonSerializer.Serialize(bReport, OptimaxJsonContext.Default.BrowserScanReport));
                     }
                     else if (req.Command == "trim-ram")
                     {
+                        await sendChunk(new IPCStreamChunk(false, 1, 45, "Đang gửi tín hiệu EmptyWorkingSet tới Kernel OS...", null));
+                        await sendChunk(new IPCStreamChunk(false, 2, 80, "Đang xả System Standby List bộ nhớ RAM...", null));
                         var trimReport = KernelMemoryTrimmer.TrimSystemMemory();
+                        await sendChunk(new IPCStreamChunk(false, 3, 95, "Hoàn tất thu hồi bộ nhớ RAM Kernel Native!", null));
                         return new IPCResponse(true, "Kernel RAM trimming completed", JsonSerializer.Serialize(trimReport, OptimaxJsonContext.Default.MemoryTrimReport));
                     }
                     else if (req.Command == "get-startup")
@@ -523,7 +539,16 @@ namespace Optimax
                     }
                     else if (req.Command == "monitor-event")
                     {
-                        return new IPCResponse(true, "Monitor threshold notification processed", null);
+                        string alertMsg = req.TargetId ?? "Junk threshold exceeded";
+                        OptimaxLogger.Warn($"[REALTIME DAEMON ALERT] {alertMsg}");
+
+                        var tweaksEngine = new SystemTweaksEngine();
+                        var tweakRes = tweaksEngine.ExecuteTweaks(new[] { "-systemp", "-standbyram" }, isDryRun: false);
+
+                        string summary = $"[REALTIME AUTO-CLEAN] Executed threshold auto-clean ({alertMsg}). Applied {tweakRes.TotalApplied} optimizations.";
+                        OptimaxLogger.Warn(summary);
+
+                        return new IPCResponse(true, summary, null);
                     }
                     return new IPCResponse(false, "Unknown command", null);
                 }, cts.Token);
@@ -580,7 +605,7 @@ namespace Optimax
                         matchedFilesList.AddRange(ruleEngine.ResolveMatchedFiles(r));
                     }
                 }
-                catch { }
+                catch (Exception ex) { OptimaxLogger.Trace($"Failed to load custom rules from: {rulesFilePath}", ex); }
             }
 
             // Create Transactional Rollback Package before scanning/cleaning
@@ -593,25 +618,7 @@ namespace Optimax
             return await scanner.ExecuteScanAsync(targetDirs, isDryRun, matchedFilesList);
         }
 
-        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, CharSet = System.Runtime.InteropServices.CharSet.Auto)]
-        private class MEMORYSTATUSEX
-        {
-            public uint dwLength;
-            public uint dwMemoryLoad;
-            public ulong ullTotalPhys;
-            public ulong ullAvailPhys;
-            public ulong ullTotalPageFile;
-            public ulong ullAvailPageFile;
-            public ulong ullTotalVirtual;
-            public ulong ullAvailVirtual;
-            public ulong ullAvailExtendedVirtual;
-            public MEMORYSTATUSEX() { dwLength = (uint)System.Runtime.InteropServices.Marshal.SizeOf<MEMORYSTATUSEX>(); }
 
-        }
-
-        [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Auto, SetLastError = true)]
-        [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
-        private static extern bool GlobalMemoryStatusEx([System.Runtime.InteropServices.In, System.Runtime.InteropServices.Out] MEMORYSTATUSEX lpBuffer);
 
         [System.Runtime.InteropServices.DllImport("kernel32.dll", SetLastError = true)]
         [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
@@ -650,7 +657,7 @@ namespace Optimax
                     _prevIdle = idle; _prevKernel = kernel; _prevUser = user;
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace("GetSystemTimes CPU measurement failed", ex); }
             return 12;
         }
 
@@ -677,7 +684,7 @@ namespace Optimax
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace("Active power plan registry read failed", ex); }
             return "BALANCED";
         }
 
@@ -689,15 +696,15 @@ namespace Optimax
 
             try
             {
-                MEMORYSTATUSEX memStatus = new MEMORYSTATUSEX();
-                if (GlobalMemoryStatusEx(memStatus))
+                Optimax.Core.MEMORYSTATUSEX memStatus = new Optimax.Core.MEMORYSTATUSEX();
+                if (Optimax.Core.ScmServiceManager.GlobalMemoryStatusEx(memStatus))
                 {
                     ramTotalGB = Math.Round((double)memStatus.ullTotalPhys / (1024 * 1024 * 1024), 2);
                     ramFreeGB = Math.Round((double)memStatus.ullAvailPhys / (1024 * 1024 * 1024), 2);
                     ramUsagePct = (int)memStatus.dwMemoryLoad;
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace("GlobalMemoryStatusEx failed in GetSystemStats", ex); }
 
             double diskTotalGB = 0;
             double diskFreeGB = 0;
@@ -713,7 +720,7 @@ namespace Optimax
                     diskUsedPct = (int)Math.Round((double)(drive.TotalSize - drive.AvailableFreeSpace) / drive.TotalSize * 100);
                 }
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace("Disk info read failed for drive C:", ex); }
 
             bool isAdmin = false;
             try
@@ -722,7 +729,7 @@ namespace Optimax
                 var principal = new System.Security.Principal.WindowsPrincipal(identity);
                 isAdmin = principal.IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator);
             }
-            catch { }
+            catch (Exception ex) { OptimaxLogger.Trace("Admin role check failed", ex); }
 
             return new SystemStatsReport(
                 CpuUsagePct: GetRealCpuUsage(),
