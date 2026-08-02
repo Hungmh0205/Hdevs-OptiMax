@@ -1,127 +1,127 @@
-# 🚀 OPTIMAX - Enterprise-Grade Production Native Windows Optimizer
+# OPTIMAX - Native Windows System Optimizer
 
-![Platform Windows](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011-blue.svg?style=for-the-badge&logo=windows)
-![Core Engine](https://img.shields.io/badge/Engine-.NET%20Native%20AOT-purple.svg?style=for-the-badge&logo=dotnet)
-![Architecture](https://img.shields.io/badge/Architecture-Win32%20%7C%20RestartManager%20%7C%20IPC-brightgreen.svg?style=for-the-badge)
-![License](https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge)
+OPTIMAX là giải pháp tối ưu hóa hiệu năng và dọn dẹp hệ thống Windows, được phát triển bằng .NET Native AOT (Win32 P/Invoke) kèm giao diện WPF (`Optimax.UI`). 
 
-**OPTIMAX Native** là giải pháp tối ưu hóa hiệu năng và dọn dẹp hệ thống Windows thế hệ mới, được phát triển dưới dạng **Native Executable (.NET Native AOT / Win32)** và giao diện **Desktop WPF App (`Optimax.UI`)**. Công cụ có tốc độ khởi động siêu nhanh (< 10ms), tiêu thụ ít tài nguyên RAM (~15 - 30 MB), sử dụng hoàn toàn **Win32 Native API** (không phụ thuộc vào Node.js runtime; PowerShell chỉ được sử dụng duy nhất cho tác vụ quản lý gói UWP/Appx do hạn chế của Windows API), và tuân thủ 100% **Nguyên Tắc An Toàn Hệ Thống (Zero-Risk Architecture)** của Microsoft Windows.
+Ứng dụng có thời gian khởi động < 10ms, mức sử dụng RAM ~15–30 MB, tối ưu hóa thông qua các API Win32 Native cấp thấp (`NtSetSystemInformation`, `rstrtmgr.dll`, Win32 SCM) và cơ chế khôi phục trạng thái (Zero-Risk Architecture).
 
 ---
 
-## 🛡️ Kiến Trúc An Toàn Tuyệt Đối (Zero-Risk Architecture)
+## Kiến trúc An toàn (Zero-Risk Architecture)
 
-1. **Chế Độ Mô Phỏng Sau Quét (`--dry-run`):**
-   - Quét bất đồng bộ đa luồng (IOCP / ThreadPool) và xuất báo cáo JSON chi tiết (danh sách tệp tin, dung lượng dự kiến giải phóng, đánh giá mức độ rủi ro `Low` / `Medium` / `High`) trước khi thực hiện dọn dẹp thực sự.
-2. **Khôi Phục Trạng Thái 1-Click (Transactional Rollback Engine):**
-   - Tự động chụp Snapshot trạng thái Registry & Dịch vụ Windows (Services StartMode) vào `%ProgramData%\Optimax\Backups\<backup-id>` trước khi can thiệp. Khôi phục nguyên trạng hệ thống trong vài giây bằng câu lệnh `Optimax.exe --rollback <backup-id>` hoặc qua danh sách Dropdown trên giao diện WPF.
-3. **Kiểm Tra Khóa Tệp Chuẩn Windows Restart Manager API:**
-   - Tuyệt đối **KHÔNG** ép dừng tiến trình nguy hiểm (`Stop-Process -Force`). Sử dụng Win32 Restart Manager API (`rstrtmgr.dll`) để phát hiện chính xác ứng dụng/tiến trình đang khóa tệp.
-   - Nếu tệp bị khóa bởi dịch vụ hệ thống critical, tự động đăng ký xóa an toàn khi reboot bằng API `MoveFileExW` (`MOVEFILE_DELAY_UNTIL_REBOOT`).
+1. **Chế độ quét thử nghiệm (`--dry-run`):**
+   - Quét bất đồng bộ đa luồng (IOCP ThreadPool) và xuất báo cáo chi tiết (danh sách tệp tin, dung lượng dự kiến giải phóng, mức độ rủi ro) trước khi thực hiện dọn dẹp thực sự.
+
+2. **Cơ chế Rollback nguyên trạng (Transactional Rollback Engine):**
+   - Tự động chụp Snapshot trạng thái Registry và dịch vụ Windows (Services StartMode/State) vào `%ProgramData%\Optimax\Backups\<backup-id>` trước khi can thiệp. Khôi phục hệ thống thông qua CLI (`--rollback <backup-id>`) hoặc UI.
+
+3. **Kiểm tra khóa tệp tin qua Win32 Restart Manager API:**
+   - Sử dụng `rstrtmgr.dll` để phát hiện chính xác ứng dụng đang khóa tệp thay vì dừng tiến trình cưỡng ép. Nếu tệp bị khóa bởi dịch vụ hệ thống critical, ứng dụng sẽ đăng ký xóa an toàn khi khởi động lại qua API `MoveFileExW` (`MOVEFILE_DELAY_UNTIL_REBOOT`).
+
 4. **Dynamic Rule Engine & WinApp2.ini Importer:**
-   - Hỗ trợ nạp trực tiếp bộ quy tắc dọn dẹp `WinApp2.ini` của cộng đồng (hàng ngàn ứng dụng) và quy tắc tùy biến từ `rules/custom_rules.json` với kiểm tra khoảng OS Build Number và phiên bản sản phẩm.
+   - Hỗ trợ nạp bộ quy tắc dọn dẹp `WinApp2.ini` và quy tắc tùy biến từ `rules/custom_rules.json` kèm kiểm tra phiên bản OS Build.
 
 ---
 
-## ⚡ Các Phân Hệ Native Core (`Optimax.Native`)
+## Các phân hệ Core Engine (`Optimax.Native`)
 
-- **Safety & Lock Inspection Engine ([`SafetyEngine.cs`](file:///d:/optimize/Optimax.Native/Core/SafetyEngine.cs)):** Tương tác trực tiếp Win32 Native API `rstrtmgr.dll` và `MoveFileExW`, kiểm tra tính khả dụng đĩa cục bộ.
-- **Parallel Scanning Engine ([`ParallelScanner.cs`](file:///d:/optimize/Optimax.Native/Core/ParallelScanner.cs)):** Quét đĩa đa luồng bất đồng bộ dựa trên IOCP ThreadPool.
-- **Transactional State Engine ([`TransactionalRollback.cs`](file:///d:/optimize/Optimax.Native/Core/TransactionalRollback.cs)):** Tạo Snapshot & Rollback nguyên trạng Registry & Windows Services.
-- **Kernel Memory Trimmer ([`KernelMemoryTrimmer.cs`](file:///d:/optimize/Optimax.Native/Core/KernelMemoryTrimmer.cs)):** Giải phóng bộ nhớ RAM kernel, xả System Standby List bằng Win32 Native API `NtSetSystemInformation`.
-- **SQLite Browser Optimizer ([`BrowserOptimizer.cs`](file:///d:/optimize/Optimax.Native/Core/BrowserOptimizer.cs)):** Tối ưu nén cơ sở dữ liệu SQLite (VACUUM) cho Chrome, Edge, Brave, Firefox, Opera.
-- **Deep Safe Registry Cleaner ([`DeepRegistryScanner.cs`](file:///d:/optimize/Optimax.Native/Core/DeepRegistryScanner.cs)):** Quét & dọn dẹp an toàn SharedDLLs mồ côi, App Paths sai lệch, MUICache rác.
-- **Secure File Shredder ([`SecureFileShredder.cs`](file:///d:/optimize/Optimax.Native/Core/SecureFileShredder.cs)):** Tiêu hủy dữ liệu an toàn theo tiêu chuẩn quân đội DoD 5220.22-M (3 lượt ghi đè), ZeroFill và RandomFill.
-- **Windows Debloater Engine ([`WindowsDebloater.cs`](file:///d:/optimize/Optimax.Native/Core/WindowsDebloater.cs)):** Vô hiệu hóa Telemetry, Windows Copilot AI, Bing Search trong Start Menu, Taskbar Widgets, Advertising ID và gỡ bỏ ứng dụng UWP Bloatware rác.
-- **System OS Tweaks Engine ([`SystemTweaksEngine.cs`](file:///d:/optimize/Optimax.Native/Core/SystemTweaksEngine.cs)):** Tinh chỉnh CPU Scheduling Priority, TRIM ổ SSD/NVMe, Global Timer Resolution (0.5ms), MMCSS Games Priority, QoS Network Ack Frequency, VSS Shadow Copies.
-- **Named Pipe IPC Server ([`NamedPipeServer.cs`](file:///d:/optimize/Optimax.Native/IPC/NamedPipeServer.cs)):** Giao tiếp IPC bảo mật qua `\\.\pipe\OptimaxIPC` (NDJSON Streaming).
-
----
-
-## 🛠️ Hướng Dẫn Cài Đặt & Sử Dụng
-
-### 📋 Yêu cầu Hệ thống
-- **Hệ điều hành:** Windows 10 / Windows 11 (64-bit).
-- **Quyền hạn:** Quản trị viên (Administrator).
-- **Yêu cầu Runtime:** KHÔNG CẦN (.NET Native AOT tự đóng gói thành 1 file `.exe` duy nhất). PowerShell chỉ cần thiết cho tính năng gỡ bỏ ứng dụng UWP Bloatware.
+- **SafetyEngine.cs:** Kiểm tra khóa tệp qua Win32 Restart Manager API (`rstrtmgr.dll`) và đăng ký xóa sau khởi động (`MoveFileExW`).
+- **ParallelScanner.cs:** Quét đĩa đa luồng dạng lazy enumeration (`IEnumerable<FileInfo>`) trên nền IOCP ThreadPool.
+- **TransactionalRollback.cs:** Quản lý tạo Snapshot và Rollback nguyên trạng Registry & Windows Services.
+- **KernelMemoryTrimmer.cs:** Giải phóng RAM kernel, thu hồi Working Set ứng dụng nền và xả System Standby List qua `NtSetSystemInformation`.
+- **BrowserOptimizer.cs:** Tối ưu nén cơ sở dữ liệu SQLite (VACUUM / REINDEX) cho Chrome, Edge, Brave, Cốc Cốc, Vivaldi, Yandex, Opera, Firefox, Thunderbird.
+- **DeepRegistryScanner.cs:** Quét 7 loại mục Registry mồ côi (SharedDLLs, App Paths, MUICache, TypeLib, CLSID) kèm danh sách loại trừ hệ thống.
+- **SecureFileShredder.cs:** Tiêu hủy dữ liệu an toàn theo tiêu chuẩn DoD 5220.22-M (3-pass overwrites + rename MFT metadata).
+- **WindowsDebloater.cs:** Vô hiệu hóa Telemetry, Windows Copilot, Bing Search, Widgets, Advertising ID và gỡ bỏ gói UWP bloatware.
+- **SystemTweaksEngine.cs:** Tinh chỉnh CPU Priority Scheduling (`Win32PrioritySeparation`), MSI Mode (`MSISupported`), TRIM đĩa SSD/NVMe, Global Timer Resolution (0.5ms), MMCSS Games Priority, QoS Network Ack Frequency (`TCPNoDelay`).
+- **NativeInterop.cs:** Đóng gói tập trung các định nghĩa P/Invoke Win32 (SCM API, MEMORYSTATUSEX) phục vụ dùng chung giữa các phân hệ.
+- **OptimaxLogger.cs:** Hệ thống ghi log đa luồng hỗ trợ chẩn đoán production tại `%ProgramData%\Optimax\Logs`.
+- **NamedPipeServer.cs:** Server IPC giao tiếp hai chiều bảo mật qua `\\.\pipe\OptimaxIPC` (NDJSON Streaming).
 
 ---
 
-### 🚀 Cách 1: Sử dụng Native App CLI (`Optimax.exe`)
+## Hướng dẫn Sử dụng
 
-Mở **Command Prompt / PowerShell (Run as Administrator)** tại thư mục `Optimax.Native`:
+### Yêu cầu Hệ thống
+- Hệ điều hành: Windows 10 / Windows 11 (64-bit).
+- Quyền hạn: Administrator.
+- Runtime: Không yêu cầu (.NET Native AOT tự đóng gói thành file binary độc lập). PowerShell chỉ được dùng khi thực hiện tác vụ quản lý gói UWP Appx do hạn chế của API Windows.
+
+---
+
+### Sử dụng qua Command Line (`Optimax.exe`)
 
 ```powershell
-# 1. Chạy Mô Phỏng Quét Hệ Thống (Dry-Run Mode):
+# Chạy mô phỏng quét (Dry-Run Mode):
 .\Optimax.exe --dry-run
 
-# 2. Chạy Quét & Dọn Dẹp Thực Sự:
+# Chạy quét và dọn dẹp thực tế:
 .\Optimax.exe --scan
 
-# 3. Tạo Snapshot Sao Lưu Hệ Thống Nguyên Trạng:
+# Tạo Snapshot sao lưu trạng thái hệ thống:
 .\Optimax.exe --create-snapshot
 
-# 4. Xem Danh Sách Các Mã Snapshot Đã Lưu:
+# Xem danh sách các bản sao lưu đã lưu:
 .\Optimax.exe --get-backups
 
-# 5. Phục Hồi Trạng Thái Hệ Thống (1-Click Rollback):
+# Phục hồi trạng thái hệ thống theo Backup ID:
 .\Optimax.exe --rollback <backup-id>
 
-# 6. Xả RAM Kernel & System Standby List:
+# Giải phóng bộ nhớ RAM Kernel & Standby List:
 .\Optimax.exe --trim-ram
 
-# 7. Tối Ưu SQLite Trình Duyệt:
+# Tối ưu hóa CSDL SQLite trình duyệt:
 .\Optimax.exe --clean-browser
 
-# 8. Dọn Dẹp Registry An Toàn:
+# Dọn dẹp Registry mồ côi:
 .\Optimax.exe --clean-registry
 
-# 9. Tiêu Hủy Tệp An Toàn (DoD 5220.22-M):
+# Tiêu hủy tệp tin an toàn (DoD 5220.22-M):
 .\Optimax.exe --shred "C:\Path\To\File" --shred-mode dod
 
-# 10. Khởi Động Named Pipe IPC Service (Cho Giao diện UI kết nối):
+# Khởi động IPC Service kết nối với giao diện WPF:
 .\Optimax.exe --ipc-service
 ```
 
 ---
 
-### 💻 Cách 2: Biên Dịch Native AOT (AOT Compilation Guide)
-
-Dự án hỗ trợ biên dịch Native AOT tạo tệp thực thi siêu nhỏ gọn:
+### Biên dịch Native AOT
 
 ```powershell
-# Biên dịch Native AOT tệp Optimax.exe:
-dotnet publish Optimax.Native/Optimax.csproj -c Release -r win-x64 /p:PublishAot=true
+dotnet publish Optimax.Native/Optimax.csproj -c Release
 ```
+
+File thực thi sau khi publish sẽ nằm tại: `Optimax.Native/bin/Release/net10.0-windows/publish/Optimax.exe`
 
 ---
 
-### 💻 Cách 3: Khởi chạy Giao diện Desktop WPF (`Optimax.UI`)
+### Giao diện WPF Desktop (`Optimax.UI`)
 
 1. Biên dịch ứng dụng UI:
    ```powershell
    dotnet build Optimax.UI/Optimax.UI.csproj -c Release
    ```
-2. Mở `Optimax.UI.exe` để điều khiển Native Engine qua kết nối bảo mật NamedPipe IPC (`\\.\pipe\OptimaxIPC`).
+2. Mở `Optimax.UI.exe` để điều khiển Native Engine qua kết nối NamedPipe IPC (`\\.\pipe\OptimaxIPC`).
 
 ---
 
-## 📦 Cấu Trúc Mã Nguồn Dự Án (Project Structure)
+## Cấu trúc Dự án
 
 ```
-d:\optimize\
+.
 ├── Optimax.Native/                 # Native C# .NET Native AOT Core Engine
 │   ├── Core/
 │   │   ├── SafetyEngine.cs         # Win32 Restart Manager API (rstrtmgr.dll) & MoveFileEx
 │   │   ├── KernelMemoryTrimmer.cs  # NtSetSystemInformation Standby List & RAM Trimmer
-│   │   ├── ParallelScanner.cs      # Async IOCP File & Directory Scanner
-│   │   ├── TransactionalRollback.cs# Registry & Service Snapshot & Rollback Engine
+│   │   ├── ParallelScanner.cs      # Async IOCP File Scanner (Lazy Enumeration)
+│   │   ├── TransactionalRollback.cs# Snapshot & Rollback Engine (Registry & Services)
 │   │   ├── DeepRegistryScanner.cs  # Deep Safe Registry Orphan Cleaner
-│   │   ├── BrowserOptimizer.cs     # Chromium & Firefox SQLite Database Vacuum
+│   │   ├── BrowserOptimizer.cs     # Chromium & Gecko SQLite Database Vacuum Engine
 │   │   ├── SecureFileShredder.cs   # DoD 5220.22-M 3-Pass Secure File Shredder
 │   │   ├── WindowsDebloater.cs     # Telemetry, Copilot, Bing, Widgets & UWP Debloater
-│   │   ├── SystemTweaksEngine.cs   # OS Tweaks Engine (CPU Priority, TRIM, MMCSS, TimerRes, QoS)
-│   │   ├── StartupOptimizer.cs     # Startup & Service Risk Assessor & Manager
+│   │   ├── SystemTweaksEngine.cs   # OS Tweaks (CPU Priority, MSI Mode, TRIM, MMCSS, TimerRes, QoS)
+│   │   ├── NativeInterop.cs        # Consolidated Win32 Native P/Invoke Definitions
+│   │   ├── OptimaxLogger.cs        # Production Diagnostic Logger
+│   │   ├── StartupOptimizer.cs     # Startup & Service Risk Assessor
 │   │   ├── RealtimeMonitorDaemon.cs# Temp Junk Realtime Monitoring Daemon
 │   │   └── WinApp2IniParser.cs     # WinApp2.ini Ruleset Importer & Parser
 │   ├── IPC/
@@ -129,14 +129,15 @@ d:\optimize\
 │   │   ├── Protocol.cs             # IPC DTOs & Streaming Chunks
 │   │   └── OptimaxJsonContext.cs   # Reflection-Free JSON Source Generator
 │   └── Program.cs                  # CLI Parser & IPC Dispatcher
-├── Optimax.UI/                     # Desktop WPF Native GUI App
+├── Optimax.UI/                     # WPF Modern GUI Application
 │   ├── IPCClient.cs                # NDJSON IPC Streaming Client
-│   ├── MainWindow.xaml             # WPF Modern Desktop UI Layout
-│   └── MainWindow.xaml.cs          # Desktop UI Business Logic & Event Handlers
+│   ├── MainWindow.xaml             # Desktop UI Layout
+│   └── MainWindow.xaml.cs          # UI Logic & Event Handlers
 └── Winapp2.ini                     # Community App Cleaning Ruleset
 ```
 
 ---
 
-## 📄 Giấy phép (License)
-Dự án được phát hành dưới giấy phép [MIT License](LICENSE).
+## Giấy phép
+
+Dự án được phát hành theo giấy phép [MIT License](LICENSE).
