@@ -24,6 +24,14 @@ namespace Optimax
 
             var opts = CliCommandRouter.ParseArguments(args);
 
+            // Helper to print JSON payload safely with start/end markers
+            static void PrintJsonPayload(string json)
+            {
+                Console.WriteLine("---PAYLOAD_START---");
+                Console.WriteLine(json);
+                Console.WriteLine("---PAYLOAD_END---");
+            }
+
             // 0. WinApp2.ini Importer Mode
             if (!string.IsNullOrEmpty(opts.ImportWinApp2Path))
             {
@@ -48,7 +56,7 @@ namespace Optimax
                 var updateReport = await Winapp2Updater.UpdateAsync(isDryRun: opts.IsDryRun);
                 Console.WriteLine($"[WINAPP2 UPDATER] {updateReport.Message}");
                 string json = JsonSerializer.Serialize(updateReport, OptimaxJsonContext.Default.Winapp2UpdateReport);
-                Console.WriteLine(json);
+                PrintJsonPayload(json);
                 return updateReport.Success ? 0 : 1;
             }
 
@@ -91,7 +99,7 @@ namespace Optimax
             {
                 var stats = SystemStatsHelper.GetSystemStats();
                 string json = JsonSerializer.Serialize(stats, OptimaxJsonContext.Default.SystemStatsReport);
-                Console.WriteLine(json);
+                PrintJsonPayload(json);
                 return 0;
             }
 
@@ -100,7 +108,7 @@ namespace Optimax
                 var rollbackMgr = new TransactionalRollbackManager();
                 var backups = rollbackMgr.GetAvailableBackups();
                 string json = JsonSerializer.Serialize(backups, OptimaxJsonContext.Default.ListBackupItemDto);
-                Console.WriteLine(json);
+                PrintJsonPayload(json);
                 return 0;
             }
 
@@ -118,9 +126,7 @@ namespace Optimax
                 Console.WriteLine("[OPTIMAX NATIVE] Executing Kernel Memory Trimming & Standby List Purge...");
                 var trimReport = KernelMemoryTrimmer.TrimSystemMemory();
                 string json = JsonSerializer.Serialize(trimReport, OptimaxJsonContext.Default.MemoryTrimReport);
-                Console.WriteLine("---PAYLOAD_START---");
-                Console.WriteLine(json);
-                Console.WriteLine("---PAYLOAD_END---");
+                PrintJsonPayload(json);
                 return 0;
             }
 
@@ -143,9 +149,7 @@ namespace Optimax
                 var regReport = regScanner.ScanAndClean(opts.IsDryRun);
                 Console.WriteLine($"[OPTIMAX NATIVE] Đã dọn dẹp {regReport.TotalIssuesFound} mục Registry mồ côi (System Hygiene).");
                 string json = JsonSerializer.Serialize(regReport, OptimaxJsonContext.Default.RegistryScanReport);
-                Console.WriteLine("---PAYLOAD_START---");
-                Console.WriteLine(json);
-                Console.WriteLine("---PAYLOAD_END---");
+                PrintJsonPayload(json);
                 return 0;
             }
 
@@ -157,9 +161,7 @@ namespace Optimax
                 var bReport = bEngine.OptimizeAllBrowsers(opts.IsDryRun);
                 Console.WriteLine($"[OPTIMAX NATIVE] Đã tối ưu {bReport.TotalBytesReclaimed / 1024} KB trên {bReport.TotalDatabasesScanned} cơ sở dữ liệu trình duyệt.");
                 string json = JsonSerializer.Serialize(bReport, OptimaxJsonContext.Default.BrowserScanReport);
-                Console.WriteLine("---PAYLOAD_START---");
-                Console.WriteLine(json);
-                Console.WriteLine("---PAYLOAD_END---");
+                PrintJsonPayload(json);
                 return 0;
             }
 
@@ -170,7 +172,7 @@ namespace Optimax
                 var sEngine = new StartupOptimizer();
                 var sReport = sEngine.GetStartupAndServiceStatus();
                 string json = JsonSerializer.Serialize(sReport, OptimaxJsonContext.Default.StartupOptimizerReport);
-                Console.WriteLine(json);
+                PrintJsonPayload(json);
                 return 0;
             }
 
@@ -186,7 +188,7 @@ namespace Optimax
                 Console.WriteLine($"[OPTIMAX NATIVE] Shredding target '{opts.ShredPath}' using algorithm {algo}...");
                 var report = SecureFileShredder.ShredTarget(opts.ShredPath, algo);
                 string json = JsonSerializer.Serialize(report, OptimaxJsonContext.Default.ShredReport);
-                Console.WriteLine(json);
+                PrintJsonPayload(json);
                 return report.Success ? 0 : 1;
             }
 
@@ -197,7 +199,7 @@ namespace Optimax
                 var debloater = new WindowsDebloater();
                 var items = debloater.GetAvailableDebloatItems();
                 string json = JsonSerializer.Serialize(items, OptimaxJsonContext.Default.ListDebloatItemDto);
-                Console.WriteLine(json);
+                PrintJsonPayload(json);
                 return 0;
             }
 
@@ -210,7 +212,7 @@ namespace Optimax
                 foreach (var item in allItems) ids.Add(item.Id);
                 var report = debloater.ApplyDebloatItems(ids.ToArray(), opts.IsDryRun);
                 string json = JsonSerializer.Serialize(report, OptimaxJsonContext.Default.DebloatReport);
-                Console.WriteLine(json);
+                PrintJsonPayload(json);
                 return 0;
             }
 
@@ -288,11 +290,8 @@ namespace Optimax
             }
 
             var scanReport = await ScanHelper.PerformScanAsync(opts.IsDryRun, opts.RulesFile);
-
             string jsonReport = JsonSerializer.Serialize(scanReport, OptimaxJsonContext.Default.ScanReport);
-            Console.WriteLine("---PAYLOAD_START---");
-            Console.WriteLine(jsonReport);
-            Console.WriteLine("---PAYLOAD_END---");
+            PrintJsonPayload(jsonReport);
 
             return 0;
         }

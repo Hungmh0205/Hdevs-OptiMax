@@ -218,24 +218,43 @@ namespace Optimax.UI
         private static string ExtractJsonFromOutput(string rawOutput)
         {
             if (string.IsNullOrWhiteSpace(rawOutput)) return "";
-            int firstObj = rawOutput.IndexOf('{');
-            int firstArr = rawOutput.IndexOf('[');
 
-            int start = -1;
-            if (firstObj >= 0 && firstArr >= 0) start = Math.Min(firstObj, firstArr);
-            else if (firstObj >= 0) start = firstObj;
-            else if (firstArr >= 0) start = firstArr;
-
-            if (start >= 0)
+            // 1. Check explicit PAYLOAD delimiters
+            int startIdx = rawOutput.IndexOf("---PAYLOAD_START---");
+            int endIdx = rawOutput.IndexOf("---PAYLOAD_END---");
+            if (startIdx >= 0 && endIdx > startIdx)
             {
-                int lastObj = rawOutput.LastIndexOf('}');
-                int lastArr = rawOutput.LastIndexOf(']');
-                int end = Math.Max(lastObj, lastArr);
-                if (end > start)
+                return rawOutput.Substring(startIdx + "---PAYLOAD_START---".Length, endIdx - startIdx - "---PAYLOAD_START---".Length).Trim();
+            }
+
+            // 2. Scan line by line for valid JSON payload (ignoring log headers like [OPTIMAX NATIVE])
+            using var reader = new StringReader(rawOutput);
+            string? line;
+            while ((line = reader.ReadLine()) != null)
+            {
+                string trimmed = line.Trim();
+                if (string.IsNullOrEmpty(trimmed)) continue;
+
+                // Skip console log lines that start with brackets like [OPTIMAX NATIVE]
+                if (trimmed.StartsWith("[") && (trimmed.Contains("OPTIMAX") || trimmed.Contains("WINAPP2") || trimmed.Contains("TASK") || trimmed.Contains("INFO") || trimmed.Contains("WARN") || trimmed.Contains("ERROR") || trimmed.Contains("SUCCESS") || trimmed.Contains("✓") || trimmed.Contains("x") || trimmed.Contains("!")))
                 {
-                    return rawOutput.Substring(start, end - start + 1);
+                    continue;
+                }
+
+                if (trimmed.StartsWith("{") || trimmed.StartsWith("["))
+                {
+                    try
+                    {
+                        using var doc = JsonDocument.Parse(trimmed);
+                        return trimmed;
+                    }
+                    catch
+                    {
+                        // Continue checking next lines
+                    }
                 }
             }
+
             return "";
         }
     }
