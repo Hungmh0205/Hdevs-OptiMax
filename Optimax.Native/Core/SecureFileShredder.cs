@@ -1,7 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
-using System.Threading.Tasks;
 
 namespace Optimax.Core
 {
@@ -52,16 +52,16 @@ namespace Optimax.Core
 
     public static class SecureFileShredder
     {
-        private const int BUFFER_SIZE = 64 * 1024; // 64 KB buffer
+        private const int BUFFER_SIZE = 128 * 1024; // 128 KB buffer for optimal I/O throughput without memory thrashing
 
         public static ShredReport ShredTarget(string targetPath, ShredAlgorithm algorithm = ShredAlgorithm.DoD5220)
         {
-            if (string.IsNullOrWhiteSpace(targetPath))
+            if (string.IsNullOrWhiteSpace(targetPath) || !Path.IsPathRooted(targetPath))
             {
                 return new ShredReport(false, 0, 0, Array.Empty<ShredItemResult>(), "Đường dẫn không hợp lệ.");
             }
 
-            var results = new System.Collections.Generic.List<ShredItemResult>();
+            var results = new List<ShredItemResult>();
             long totalBytes = 0;
             int successCount = 0;
 
@@ -79,8 +79,15 @@ namespace Optimax.Core
             {
                 try
                 {
-                    string[] files = Directory.GetFiles(targetPath, "*", SearchOption.AllDirectories);
-                    foreach (var file in files)
+                    // Check if target root directory is a ReparsePoint / Symlink
+                    if ((File.GetAttributes(targetPath) & FileAttributes.ReparsePoint) != 0)
+                    {
+                        return new ShredReport(false, 0, 0, Array.Empty<ShredItemResult>(), "Bỏ qua thư mục là Junction/Symlink để bảo vệ tệp hệ thống.");
+                    }
+
+                    // SAFE TRAVERSAL: Enumerate files manually without following subfolder ReparsePoints/Symlinks
+                    List<string> safeFiles = EnumerateFilesSafeNoSymlinks(targetPath);
+                    foreach (var file in safeFiles)
                     {
                         var res = ShredSingleFile(file, algorithm);
                         results.Add(res);
@@ -91,15 +98,19 @@ namespace Optimax.Core
                         }
                     }
 
-                    // Try delete empty directories
+                    // Delete empty subdirectories safely
                     try
                     {
                         Directory.Delete(targetPath, true);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        OptimaxLogger.Trace($"Failed to clean root directory '{targetPath}' after shredding", ex);
+                    }
                 }
                 catch (Exception ex)
                 {
+                    OptimaxLogger.Warn($"Directory enumeration error during shredding: {targetPath}", ex);
                     return new ShredReport(false, successCount, totalBytes, results.ToArray(), $"Lỗi duyệt thư mục: {ex.Message}");
                 }
             }
@@ -108,7 +119,62 @@ namespace Optimax.Core
                 return new ShredReport(false, 0, 0, Array.Empty<ShredItemResult>(), "Tệp hoặc thư mục không tồn tại.");
             }
 
-            return new ShredReport(true, successCount, totalBytes, results.ToArray(), $"Đã hủy an toàn {successCount} tệp ({totalBytes / (1024 * 1024):F2} MB).");
+            return new ShredReport(true, successCount, totalBytes, results.ToArray(), $"Đã hủy an toàn {successCount} tệp ({(double)totalBytes / (1024 * 1024):F2} MB).");
+        }
+
+        private static List<string> EnumerateFilesSafeNoSymlinks(string rootDirPath)
+        {
+            var filesList = new List<string>();
+            var dirQueue = new Queue<string>();
+            dirQueue.Enqueue(rootDirPath);
+
+            while (dirQueue.Count > 0)
+            {
+                string currentDir = dirQueue.Dequeue();
+
+                try
+                {
+                    var dirInfo = new DirectoryInfo(currentDir);
+
+                    // Skip subdirectories that are ReparsePoints (Symlinks / NTFS Junctions)
+                    if ((dirInfo.Attributes & FileAttributes.ReparsePoint) != 0 && !currentDir.Equals(rootDirPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        OptimaxLogger.Warn($"Skipping symlink/junction subdirectory traversal: '{currentDir}'");
+                        continue;
+                    }
+
+                    foreach (var file in dirInfo.GetFiles())
+                    {
+                        // Skip individual file symlinks
+                        if ((file.Attributes & FileAttributes.ReparsePoint) == 0)
+                        {
+                            filesList.Add(file.FullName);
+                        }
+                        else
+                        {
+                            OptimaxLogger.Warn($"Skipping symlink file: '{file.FullName}'");
+                        }
+                    }
+
+                    foreach (var subDir in dirInfo.GetDirectories())
+                    {
+                        if ((subDir.Attributes & FileAttributes.ReparsePoint) == 0)
+                        {
+                            dirQueue.Enqueue(subDir.FullName);
+                        }
+                    }
+                }
+                catch (UnauthorizedAccessException ex)
+                {
+                    OptimaxLogger.Trace($"Access denied during directory traversal: {currentDir}", ex);
+                }
+                catch (DirectoryNotFoundException ex)
+                {
+                    OptimaxLogger.Trace($"Directory not found during traversal: {currentDir}", ex);
+                }
+            }
+
+            return filesList;
         }
 
         private static ShredItemResult ShredSingleFile(string filePath, ShredAlgorithm algorithm)
@@ -120,6 +186,12 @@ namespace Optimax.Core
                 if (!fileInfo.Exists)
                 {
                     return new ShredItemResult(filePath, 0, false, "Tệp không tồn tại.");
+                }
+
+                // Check ReparsePoint / Symlink attribute
+                if ((fileInfo.Attributes & FileAttributes.ReparsePoint) != 0)
+                {
+                    return new ShredItemResult(filePath, 0, false, "Bỏ qua tệp là Symlink/ReparsePoint để bảo vệ tệp hệ thống.");
                 }
 
                 // Check read-only attribute
@@ -137,7 +209,7 @@ namespace Optimax.Core
                     return new ShredItemResult(filePath, fileSize, false, $"Tệp đang bị khóa bởi: {string.Join(", ", lockingApps)}");
                 }
 
-                using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Write, FileShare.None))
+                using (var fs = new FileStream(filePath, FileMode.Open, FileAccess.Write, FileShare.None, BUFFER_SIZE, FileOptions.SequentialScan | FileOptions.WriteThrough))
                 {
                     switch (algorithm)
                     {
@@ -183,6 +255,7 @@ namespace Optimax.Core
             }
             catch (Exception ex)
             {
+                OptimaxLogger.Warn($"Failed to shred file: {filePath}", ex);
                 return new ShredItemResult(filePath, fileSize, false, $"Lỗi xóa đè: {ex.Message}");
             }
         }
@@ -199,7 +272,6 @@ namespace Optimax.Core
                 fs.Write(buffer, 0, bytesToWrite);
                 bytesRemaining -= bytesToWrite;
             }
-            fs.Flush(true);
         }
 
         private static void OverwriteFileWithRandom(FileStream fs, long totalBytes)
@@ -214,7 +286,6 @@ namespace Optimax.Core
                 fs.Write(buffer, 0, bytesToWrite);
                 bytesRemaining -= bytesToWrite;
             }
-            fs.Flush(true);
         }
     }
 }

@@ -2,9 +2,11 @@
 bin/
 obj/
 publish/
+publish_release/
 release/
 *.zip
 *.7z
+*.sha256
 
 # Dynamic Rules & Backups
 rules/custom_rules.json

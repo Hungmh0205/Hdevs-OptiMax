@@ -14,7 +14,7 @@ namespace Optimax.Core
     // ═══════════════════════════════════════════════════════════
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
-    public class MEMORYSTATUSEX
+    public struct MEMORYSTATUSEX
     {
         public uint dwLength;
         public uint dwMemoryLoad;
@@ -26,7 +26,7 @@ namespace Optimax.Core
         public ulong ullAvailVirtual;
         public ulong ullAvailExtendedVirtual;
 
-        public MEMORYSTATUSEX()
+        public void Init()
         {
             dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>();
         }
@@ -48,21 +48,36 @@ namespace Optimax.Core
         public uint dwWaitHint;
     }
 
+    public sealed class SafeServiceHandle : Microsoft.Win32.SafeHandles.SafeHandleZeroOrMinusOneIsInvalid
+    {
+        private SafeServiceHandle() : base(true) { }
+
+        [DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseServiceHandle(IntPtr hSCObject);
+
+        protected override bool ReleaseHandle()
+        {
+            return CloseServiceHandle(handle);
+        }
+    }
+
     /// <summary>
     /// Unified Service Control Manager (SCM) P/Invoke wrapper.
-    /// Consolidates Win32 SCM operations previously duplicated in TransactionalRollback and StartupOptimizer.
+    /// Consolidates Win32 SCM operations with SafeServiceHandle resource safety.
     /// </summary>
     public static class ScmServiceManager
     {
         [DllImport("advapi32.dll", EntryPoint = "OpenSCManagerW", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern IntPtr OpenSCManager(string? machineName, string? databaseName, uint dwDesiredAccess);
+        private static extern SafeServiceHandle OpenSCManager(string? machineName, string? databaseName, uint dwDesiredAccess);
 
         [DllImport("advapi32.dll", EntryPoint = "OpenServiceW", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern IntPtr OpenService(IntPtr hSCManager, string serviceName, uint dwDesiredAccess);
+        private static extern SafeServiceHandle OpenService(SafeServiceHandle hSCManager, string serviceName, uint dwDesiredAccess);
 
         [DllImport("advapi32.dll", EntryPoint = "ChangeServiceConfigW", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
         private static extern bool ChangeServiceConfig(
-            IntPtr hService,
+            SafeServiceHandle hService,
             uint dwServiceType,
             uint dwStartType,
             uint dwErrorControl,
@@ -75,17 +90,16 @@ namespace Optimax.Core
             string? displayName);
 
         [DllImport("advapi32.dll", EntryPoint = "ControlService", ExactSpelling = true, SetLastError = true)]
-        private static extern bool ControlService(IntPtr hService, uint dwControl, ref SERVICE_STATUS lpServiceStatus);
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool ControlService(SafeServiceHandle hService, uint dwControl, ref SERVICE_STATUS lpServiceStatus);
 
         [DllImport("advapi32.dll", EntryPoint = "StartServiceW", ExactSpelling = true, CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern bool StartService(IntPtr hService, uint dwNumServiceArgs, IntPtr lpServiceArgVectors);
-
-        [DllImport("advapi32.dll", EntryPoint = "CloseServiceHandle", ExactSpelling = true, SetLastError = true)]
-        private static extern bool CloseServiceHandle(IntPtr hSCObject);
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool StartService(SafeServiceHandle hService, uint dwNumServiceArgs, IntPtr lpServiceArgVectors);
 
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
-        public static extern bool GlobalMemoryStatusEx([In, Out] MEMORYSTATUSEX lpBuffer);
+        public static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
 
         // ── Constants ──
         public const uint SC_MANAGER_ALL_ACCESS = 0xF003F;
@@ -102,35 +116,21 @@ namespace Optimax.Core
         /// </summary>
         public static bool SetServiceConfig(string serviceName, ServiceStartMode startMode)
         {
-            IntPtr hSCM = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);
-            if (hSCM == IntPtr.Zero) return false;
+            using SafeServiceHandle hSCM = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);
+            if (hSCM.IsInvalid) return false;
 
-            try
+            using SafeServiceHandle hSvc = OpenService(hSCM, serviceName, SERVICE_ALL_ACCESS);
+            if (hSvc.IsInvalid) return false;
+
+            uint winStartType = startMode switch
             {
-                IntPtr hSvc = OpenService(hSCM, serviceName, SERVICE_ALL_ACCESS);
-                if (hSvc == IntPtr.Zero) return false;
+                ServiceStartMode.Automatic => SERVICE_AUTO_START,
+                ServiceStartMode.Manual => SERVICE_DEMAND_START,
+                ServiceStartMode.Disabled => SERVICE_DISABLED,
+                _ => SERVICE_DEMAND_START
+            };
 
-                try
-                {
-                    uint winStartType = startMode switch
-                    {
-                        ServiceStartMode.Automatic => SERVICE_AUTO_START,
-                        ServiceStartMode.Manual => SERVICE_DEMAND_START,
-                        ServiceStartMode.Disabled => SERVICE_DISABLED,
-                        _ => SERVICE_DEMAND_START
-                    };
-
-                    return ChangeServiceConfig(hSvc, SERVICE_NO_CHANGE, winStartType, SERVICE_NO_CHANGE, null, null, IntPtr.Zero, null, null, null, null);
-                }
-                finally
-                {
-                    CloseServiceHandle(hSvc);
-                }
-            }
-            finally
-            {
-                CloseServiceHandle(hSCM);
-            }
+            return ChangeServiceConfig(hSvc, SERVICE_NO_CHANGE, winStartType, SERVICE_NO_CHANGE, null, null, IntPtr.Zero, null, null, null, null);
         }
 
         /// <summary>
@@ -139,52 +139,38 @@ namespace Optimax.Core
         /// </summary>
         public static bool RestoreServiceState(string serviceName, ServiceStartMode startMode, ServiceControllerStatus status)
         {
-            IntPtr hSCM = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);
-            if (hSCM == IntPtr.Zero) return false;
+            using SafeServiceHandle hSCM = OpenSCManager(null, null, SC_MANAGER_ALL_ACCESS);
+            if (hSCM.IsInvalid) return false;
+
+            using SafeServiceHandle hSvc = OpenService(hSCM, serviceName, SERVICE_ALL_ACCESS);
+            if (hSvc.IsInvalid) return false;
+
+            uint winStartType = startMode switch
+            {
+                ServiceStartMode.Automatic => SERVICE_AUTO_START,
+                ServiceStartMode.Manual => SERVICE_DEMAND_START,
+                ServiceStartMode.Disabled => SERVICE_DISABLED,
+                _ => SERVICE_DEMAND_START
+            };
+
+            ChangeServiceConfig(hSvc, SERVICE_NO_CHANGE, winStartType, SERVICE_NO_CHANGE, null, null, IntPtr.Zero, null, null, null, null);
 
             try
             {
-                IntPtr hSvc = OpenService(hSCM, serviceName, SERVICE_ALL_ACCESS);
-                if (hSvc == IntPtr.Zero) return false;
-
-                try
+                using var sc = new ServiceController(serviceName);
+                if (status == ServiceControllerStatus.Running && sc.Status != ServiceControllerStatus.Running)
                 {
-                    uint winStartType = startMode switch
-                    {
-                        ServiceStartMode.Automatic => SERVICE_AUTO_START,
-                        ServiceStartMode.Manual => SERVICE_DEMAND_START,
-                        ServiceStartMode.Disabled => SERVICE_DISABLED,
-                        _ => SERVICE_DEMAND_START
-                    };
-
-                    ChangeServiceConfig(hSvc, SERVICE_NO_CHANGE, winStartType, SERVICE_NO_CHANGE, null, null, IntPtr.Zero, null, null, null, null);
-
-                    try
-                    {
-                        using var sc = new ServiceController(serviceName);
-                        if (status == ServiceControllerStatus.Running && sc.Status != ServiceControllerStatus.Running)
-                        {
-                            StartService(hSvc, 0, IntPtr.Zero);
-                        }
-                        else if (status == ServiceControllerStatus.Stopped && sc.Status != ServiceControllerStatus.Stopped)
-                        {
-                            SERVICE_STATUS statusStruct = new SERVICE_STATUS();
-                            ControlService(hSvc, SERVICE_CONTROL_STOP, ref statusStruct);
-                        }
-                    }
-                    catch (Exception ex) { OptimaxLogger.Trace($"Failed to restore service run state: {serviceName}", ex); }
-
-                    return true;
+                    StartService(hSvc, 0, IntPtr.Zero);
                 }
-                finally
+                else if (status == ServiceControllerStatus.Stopped && sc.Status != ServiceControllerStatus.Stopped)
                 {
-                    CloseServiceHandle(hSvc);
+                    SERVICE_STATUS statusStruct = new SERVICE_STATUS();
+                    ControlService(hSvc, SERVICE_CONTROL_STOP, ref statusStruct);
                 }
             }
-            finally
-            {
-                CloseServiceHandle(hSCM);
-            }
+            catch (Exception ex) { OptimaxLogger.Trace($"Failed to restore service run state: {serviceName}", ex); }
+
+            return true;
         }
     }
 }

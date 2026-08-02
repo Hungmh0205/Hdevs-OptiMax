@@ -14,13 +14,25 @@ namespace Optimax.Core
         public List<string> Messages { get; set; } = new();
     }
 
-    public class SystemTweaksEngine
+    public class SystemTweaksEngine : ISystemTweaksEngine
     {
         public TweakExecutionResult ExecuteTweaks(string[] flags, bool isDryRun = false)
         {
             var result = new TweakExecutionResult();
             var rollbackMgr = new TransactionalRollbackManager();
-            var backupPkg = rollbackMgr.CreatePackage();
+            using var txScope = new TransactionalScope(rollbackMgr);
+            var backupPkg = txScope.Package;
+
+            if (!isDryRun && flags != null && flags.Length > 0)
+            {
+                if (NativeSystemRestore.CreateRestorePoint("OptiMax Pre-Tweak Safety Checkpoint", out long seq))
+                {
+                    result.Messages.Add($"[SAFETY] Đã tạo điểm khôi phục Windows Restore Point (Seq: {seq}).");
+                }
+            }
+
+            if (flags == null || flags.Length == 0) return result;
+
 
             foreach (var flag in flags)
             {
@@ -32,9 +44,16 @@ namespace Optimax.Core
                     switch (cleanFlag.ToLowerInvariant())
                     {
                         case "-disablevbs":
-                            if (!isDryRun) SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"System\CurrentControlSet\Control\DeviceGuard", "EnableVirtualizationBasedSecurity", 0);
-                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Tắt VBS (Virtualization-Based Security)");
-                            result.TotalApplied++;
+                            if (!CpuTopologyDetector.IsVirtualMachine())
+                            {
+                                result.Messages.Add("[SAFETY GATED] Tắt VBS đã bị bỏ qua trên hệ thống vật lý để bảo vệ tính năng HVCI & Credential Guard. Chỉ cho phép trong máy ảo (VM).");
+                            }
+                            else
+                            {
+                                if (!isDryRun) SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"System\CurrentControlSet\Control\DeviceGuard", "EnableVirtualizationBasedSecurity", 0);
+                                result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Tắt VBS (Virtualization-Based Security)");
+                                result.TotalApplied++;
+                            }
                             break;
 
                         case "-enablevbs":
@@ -45,13 +64,20 @@ namespace Optimax.Core
 
                         case "-powerultimate":
                         case "-setultimatepower":
-                            if (!isDryRun)
+                            if (CpuTopologyDetector.IsOnBatteryPower())
                             {
-                                EnsureUltimatePowerScheme();
-                                RunCommand("powercfg", "/setactive e9a42b02-d5df-448d-aa00-03f14749eb61");
+                                result.Messages.Add("[SAFETY GATED] Đã bỏ qua kích hoạt Ultimate Performance do thiết bị đang dùng Pin để tránh chai pin và quá nhiệt.");
                             }
-                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Kích hoạt sơ đồ Nguồn Ultimate Performance");
-                            result.TotalApplied++;
+                            else
+                            {
+                                if (!isDryRun)
+                                {
+                                    EnsureUltimatePowerScheme();
+                                    RunCommand("powercfg", "/setactive e9a42b02-d5df-448d-aa00-03f14749eb61");
+                                }
+                                result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Kích hoạt sơ đồ Nguồn Ultimate Performance");
+                                result.TotalApplied++;
+                            }
                             break;
 
                         case "-setbalancedpower":
@@ -144,9 +170,16 @@ namespace Optimax.Core
 
                         case "-cpuboost":
                         case "-cpupriority":
-                            if (!isDryRun) SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\PriorityControl", "Win32PrioritySeparation", 38);
-                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Tối ưu CPU Scheduling (Short Quantum, Variable, Foreground Boost)");
-                            result.TotalApplied++;
+                            if (CpuTopologyDetector.IsHybridOrArm64Topology())
+                            {
+                                result.Messages.Add("[SAFETY GATED] Đã bỏ qua Win32PrioritySeparation trên CPU Hybrid/ARM64 để tránh hiện tượng Thread Starvation và giật 1% Low FPS.");
+                            }
+                            else
+                            {
+                                if (!isDryRun) SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\PriorityControl", "Win32PrioritySeparation", 38);
+                                result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Tối ưu CPU Scheduling (Short Quantum, Variable, Foreground Boost)");
+                                result.TotalApplied++;
+                            }
                             break;
 
                         case "-msimode":
@@ -163,9 +196,16 @@ namespace Optimax.Core
 
                         case "-timerres":
                         case "-timerresolution":
-                            if (!isDryRun) SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Session Manager\Kernel", "GlobalTimerResolutionRequests", 1);
-                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Tối ưu hóa độ phân giải bộ đếm thời gian hệ thống (Global Timer Resolution 0.5ms)");
-                            result.TotalApplied++;
+                            if (CpuTopologyDetector.IsWindows10Build2004OrNewer())
+                            {
+                                result.Messages.Add("[SAFETY GATED] Bỏ qua cờ Registry GlobalTimerResolution do Windows 10 2004+ đã thay đổi cơ chế timer per-process.");
+                            }
+                            else
+                            {
+                                if (!isDryRun) SetRegistryDword(backupPkg, rollbackMgr, Registry.LocalMachine, @"SYSTEM\CurrentControlSet\Control\Session Manager\Kernel", "GlobalTimerResolutionRequests", 1);
+                                result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Tối ưu hóa độ phân giải bộ đếm thời gian hệ thống (Global Timer Resolution 0.5ms)");
+                                result.TotalApplied++;
+                            }
                             break;
 
                         case "-mmcss":
@@ -208,9 +248,7 @@ namespace Optimax.Core
                             break;
 
                         case "-forcecleanshadows":
-                            if (!isDryRun) RunCommand("vssadmin", "delete shadows /all /quiet");
-                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Xóa các bản sao VSS Shadow Copies cũ giải phóng dung lượng đĩa");
-                            result.TotalApplied++;
+                            result.Messages.Add("[SAFETY DISABLED] Lệnh xóa VSS Shadow Copies (vssadmin) đã bị vô hiệu hóa hoàn toàn để bảo vệ các điểm khôi phục hệ thống.");
                             break;
 
                         case "-standbyram":
@@ -239,11 +277,12 @@ namespace Optimax.Core
 
             if (!isDryRun && (backupPkg.RegistryEntries.Count > 0 || backupPkg.ServiceEntries.Count > 0))
             {
-                rollbackMgr.PersistPackage(backupPkg);
+                txScope.Commit();
             }
 
             return result;
         }
+
 
         private static void SetRegistryDword(SystemStateBackupPackage package, TransactionalRollbackManager rollbackMgr, RegistryKey root, string subKey, string valueName, int value)
         {
@@ -278,6 +317,19 @@ namespace Optimax.Core
             catch (Exception ex) { OptimaxLogger.Warn("Network adapter optimization failed", ex); }
         }
 
+        private static bool IsReparsePoint(string path)
+        {
+            try
+            {
+                var attr = File.GetAttributes(path);
+                return (attr & FileAttributes.ReparsePoint) != 0;
+            }
+            catch
+            {
+                return true; // Skip if attributes cannot be checked
+            }
+        }
+
         private static int CleanThirdPartyJunkFolders()
         {
             int cleanedFiles = 0;
@@ -297,7 +349,7 @@ namespace Optimax.Core
 
             foreach (var dir in junkDirs)
             {
-                if (Directory.Exists(dir))
+                if (Directory.Exists(dir) && !IsReparsePoint(dir))
                 {
                     try
                     {
@@ -305,8 +357,11 @@ namespace Optimax.Core
                         {
                             try
                             {
-                                File.Delete(file);
-                                cleanedFiles++;
+                                if (!IsReparsePoint(file))
+                                {
+                                    File.Delete(file);
+                                    cleanedFiles++;
+                                }
                             }
                             catch (Exception ex) { OptimaxLogger.Trace($"Failed to delete junk file: {file}", ex); }
                         }
@@ -450,15 +505,18 @@ namespace Optimax.Core
 
             foreach (var dir in systemTempDirs)
             {
-                if (!Directory.Exists(dir)) continue;
+                if (!Directory.Exists(dir) || IsReparsePoint(dir)) continue;
                 try
                 {
                     foreach (var file in Directory.EnumerateFiles(dir, "*", SearchOption.AllDirectories))
                     {
                         try
                         {
-                            File.Delete(file);
-                            cleanedFiles++;
+                            if (!IsReparsePoint(file))
+                            {
+                                File.Delete(file);
+                                cleanedFiles++;
+                            }
                         }
                         catch (Exception ex) { OptimaxLogger.Trace($"Failed to delete system temp file: {file}", ex); }
                     }

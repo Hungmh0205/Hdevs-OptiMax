@@ -14,8 +14,10 @@ namespace Optimax.IPC
         [property: JsonPropertyName("targetId")] string? TargetId = null,
         [property: JsonPropertyName("enable")] bool Enable = true,
         [property: JsonPropertyName("serviceStartMode")] int ServiceStartMode = 2,
-        [property: JsonPropertyName("flags")] string[]? Flags = null
+        [property: JsonPropertyName("flags")] string[]? Flags = null,
+        [property: JsonPropertyName("requestGuid")] string? RequestGuid = null
     );
+
 
     public record IPCResponse(
         [property: JsonPropertyName("success")] bool Success,

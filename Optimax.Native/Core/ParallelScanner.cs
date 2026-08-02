@@ -17,42 +17,29 @@ namespace Optimax.Core
             var processedFiles = new ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
             long totalBytes = 0;
 
-            var options = new ParallelOptions
-            {
-                MaxDegreeOfParallelism = Environment.ProcessorCount,
-                CancellationToken = ct
-            };
-
+            // 1. Process explicit custom matched files (e.g. from WinApp2.ini / custom rules)
             if (customMatchedFiles != null)
             {
                 foreach (var filePath in customMatchedFiles)
                 {
+                    if (ct.IsCancellationRequested) break;
                     if (File.Exists(filePath) && processedFiles.TryAdd(filePath, 0))
                     {
-                        ProcessSingleFile(new FileInfo(filePath), isDryRun, ref totalBytes, results);
+                        long size = 0;
+                        try { size = new FileInfo(filePath).Length; } catch { }
+                        ProcessSingleFileNative(filePath, size, isDryRun, ref totalBytes, results);
                     }
                 }
             }
 
-            await Parallel.ForEachAsync(targetDirectories, options, async (dir, token) =>
+            // 2. High-performance Win32 Native Work-Stealing Multi-Core Directory Scan
+            await FastNativeScanner.ScanDirectoriesParallelAsync(targetDirectories, fileInfo =>
             {
-                await Task.Yield();
-                string expanded = Environment.ExpandEnvironmentVariables(dir);
-                if (!Directory.Exists(expanded)) return;
-
-                if (!SafetyEngine.IsDriveReadyAndLocal(expanded)) return;
-
-                var files = EnumerateFilesSafe(expanded);
-
-                foreach (var file in files)
+                if (processedFiles.TryAdd(fileInfo.FullPath, 0))
                 {
-                    token.ThrowIfCancellationRequested();
-                    if (processedFiles.TryAdd(file.FullName, 0))
-                    {
-                        ProcessSingleFile(file, isDryRun, ref totalBytes, results);
-                    }
+                    ProcessSingleFileNative(fileInfo.FullPath, fileInfo.SizeBytes, isDryRun, ref totalBytes, results);
                 }
-            });
+            }, ct);
 
             var itemsArray = results.ToArray();
             string riskLevel = itemsArray.Any(i => i.IsLocked) ? "Medium" : "Low";
@@ -60,108 +47,90 @@ namespace Optimax.Core
             return new ScanReport(isDryRun, itemsArray.Length, totalBytes, riskLevel, itemsArray);
         }
 
-        private static void ProcessSingleFile(FileInfo file, bool isDryRun, ref long totalBytes, ConcurrentBag<ScanItemResult> results)
+        private static void ProcessSingleFileNative(string filePath, long size, bool isDryRun, ref long totalBytes, ConcurrentBag<ScanItemResult> results)
         {
-            long size = 0;
-            try { size = file.Length; } catch (Exception ex) { OptimaxLogger.Trace($"Cannot read file size: {file.FullName}", ex); }
-
             bool isLocked = false;
             string[] lockingApps = Array.Empty<string>();
+            string action = isDryRun ? "Would Delete" : "DeleteImmediate";
 
-            // Test if file can be opened exclusively
             try
             {
-                using var fs = file.Open(FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+                var attr = File.GetAttributes(filePath);
+                if ((attr & FileAttributes.ReparsePoint) != 0)
+                {
+                    results.Add(new ScanItemResult(filePath, size, false, Array.Empty<string>(), "Skipped (ReparsePoint/Symlink)"));
+                    return;
+                }
             }
-            catch (IOException)
+            catch
             {
-                isLocked = true;
-            }
-            catch (UnauthorizedAccessException)
-            {
-                isLocked = true;
-            }
-            catch (Exception ex) { OptimaxLogger.Trace($"File access check inconclusive: {file.FullName}", ex); }
-
-            if (isLocked)
-            {
-                var lockRes = SafetyEngine.GetFileLockStatus(file.FullName);
-                lockingApps = lockRes.LockingApps;
+                // Attribute read error
             }
 
-            string action = isDryRun ? "Would Delete" : "DeleteImmediate";
-            if (isLocked)
+            if (isDryRun)
             {
-                action = "Skipped (File Locked)";
-            }
-            else if (!isDryRun)
-            {
+                // Lightweight check during dry-run scan without opening unnecessary exclusive write handles
                 try
                 {
-                    if (file.IsReadOnly) file.IsReadOnly = false;
-                    file.Delete();
-                    Interlocked.Add(ref totalBytes, size);
+                    var attr = File.GetAttributes(filePath);
+                    if ((attr & FileAttributes.ReadOnly) != 0)
+                    {
+                        // File is read-only
+                    }
                 }
-                catch
+                catch (IOException)
                 {
-                    action = "Skipped (Access Denied)";
+                    isLocked = true;
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    isLocked = true;
+                }
+
+                if (isLocked)
+                {
+                    var lockRes = SafetyEngine.GetFileLockStatus(filePath);
+                    lockingApps = lockRes.LockingApps;
+                    action = "Skipped (File Locked)";
+                }
+                else
+                {
+                    Interlocked.Add(ref totalBytes, size);
                 }
             }
             else
             {
-                Interlocked.Add(ref totalBytes, size);
-            }
-
-            results.Add(new ScanItemResult(file.FullName, size, isLocked, lockingApps, action));
-        }
-
-
-        private static IEnumerable<FileInfo> EnumerateFilesSafe(string rootPath)
-        {
-            var dirsToProcess = new Queue<string>();
-            dirsToProcess.Enqueue(rootPath);
-
-            while (dirsToProcess.Count > 0)
-            {
-                string currentDir = dirsToProcess.Dequeue();
-
-                IEnumerable<string> files;
+                // Execution mode: Direct removal attempt to eliminate redundant pre-open handles
                 try
                 {
-                    files = Directory.EnumerateFiles(currentDir);
+                    var fileAttr = File.GetAttributes(filePath);
+                    if ((fileAttr & FileAttributes.ReadOnly) != 0)
+                    {
+                        File.SetAttributes(filePath, fileAttr & ~FileAttributes.ReadOnly);
+                    }
+                    File.Delete(filePath);
+                    Interlocked.Add(ref totalBytes, size);
+                }
+                catch (IOException)
+                {
+                    isLocked = true;
+                    var lockRes = SafetyEngine.GetFileLockStatus(filePath);
+                    lockingApps = lockRes.LockingApps;
+                    action = "Skipped (File Locked)";
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    isLocked = true;
+                    action = "Skipped (Access Denied)";
                 }
                 catch (Exception ex)
                 {
-                    OptimaxLogger.Trace($"Cannot enumerate files in: {currentDir}", ex);
-                    continue;
-                }
-
-                foreach (var filePath in files)
-                {
-                    FileInfo fi;
-                    try { fi = new FileInfo(filePath); }
-                    catch (Exception ex)
-                    {
-                        OptimaxLogger.Trace($"Cannot access file: {filePath}", ex);
-                        continue;
-                    }
-                    yield return fi;
-                }
-
-                try
-                {
-                    foreach (var subDir in Directory.EnumerateDirectories(currentDir))
-                    {
-                        dirsToProcess.Enqueue(subDir);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    // Expected for Access Denied on system directories
-                    OptimaxLogger.Trace($"Cannot enumerate subdirectories: {currentDir}", ex);
+                    OptimaxLogger.Trace($"File delete failed: {filePath}", ex);
+                    action = "Skipped (Error)";
                 }
             }
+
+            results.Add(new ScanItemResult(filePath, size, isLocked, lockingApps, action));
         }
     }
 }
-

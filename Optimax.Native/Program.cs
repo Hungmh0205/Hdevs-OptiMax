@@ -624,9 +624,8 @@ namespace Optimax
         [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
         private static extern bool GetSystemTimes(out System.Runtime.InteropServices.ComTypes.FILETIME lpIdleTime, out System.Runtime.InteropServices.ComTypes.FILETIME lpKernelTime, out System.Runtime.InteropServices.ComTypes.FILETIME lpUserTime);
 
-        private static ulong _prevIdle = 0;
-        private static ulong _prevKernel = 0;
-        private static ulong _prevUser = 0;
+        private static long _prevIdleTicks = 0;
+        private static long _prevTotalTicks = 0;
 
         private static int GetRealCpuUsage()
         {
@@ -634,27 +633,27 @@ namespace Optimax
             {
                 if (GetSystemTimes(out var idleTime, out var kernelTime, out var userTime))
                 {
-                    ulong idle = ((ulong)idleTime.dwHighDateTime << 32) | (uint)idleTime.dwLowDateTime;
-                    ulong kernel = ((ulong)kernelTime.dwHighDateTime << 32) | (uint)kernelTime.dwLowDateTime;
-                    ulong user = ((ulong)userTime.dwHighDateTime << 32) | (uint)userTime.dwLowDateTime;
+                    long idle = ((long)idleTime.dwHighDateTime << 32) | (uint)idleTime.dwLowDateTime;
+                    long kernel = ((long)kernelTime.dwHighDateTime << 32) | (uint)kernelTime.dwLowDateTime;
+                    long user = ((long)userTime.dwHighDateTime << 32) | (uint)userTime.dwLowDateTime;
 
-                    if (_prevIdle != 0)
+                    long total = kernel + user;
+
+                    long prevIdle = Interlocked.Exchange(ref _prevIdleTicks, idle);
+                    long prevTotal = Interlocked.Exchange(ref _prevTotalTicks, total);
+
+                    if (prevTotal > 0)
                     {
-                        ulong idleDiff = idle - _prevIdle;
-                        ulong kernelDiff = kernel - _prevKernel;
-                        ulong userDiff = user - _prevUser;
+                        long totalDiff = total - prevTotal;
+                        long idleDiff = idle - prevIdle;
 
-                        ulong totalDiff = kernelDiff + userDiff;
                         if (totalDiff > 0)
                         {
-                            ulong busyDiff = totalDiff - idleDiff;
+                            long busyDiff = totalDiff - idleDiff;
                             int pct = (int)(busyDiff * 100 / totalDiff);
-                            _prevIdle = idle; _prevKernel = kernel; _prevUser = user;
                             return Math.Clamp(pct, 0, 100);
                         }
                     }
-
-                    _prevIdle = idle; _prevKernel = kernel; _prevUser = user;
                 }
             }
             catch (Exception ex) { OptimaxLogger.Trace("GetSystemTimes CPU measurement failed", ex); }
@@ -696,8 +695,9 @@ namespace Optimax
 
             try
             {
-                Optimax.Core.MEMORYSTATUSEX memStatus = new Optimax.Core.MEMORYSTATUSEX();
-                if (Optimax.Core.ScmServiceManager.GlobalMemoryStatusEx(memStatus))
+                Optimax.Core.MEMORYSTATUSEX memStatus = default;
+                memStatus.Init();
+                if (Optimax.Core.ScmServiceManager.GlobalMemoryStatusEx(ref memStatus))
                 {
                     ramTotalGB = Math.Round((double)memStatus.ullTotalPhys / (1024 * 1024 * 1024), 2);
                     ramFreeGB = Math.Round((double)memStatus.ullAvailPhys / (1024 * 1024 * 1024), 2);

@@ -10,14 +10,15 @@ using Optimax.IPC;
 
 namespace Optimax.Core
 {
-    public class RealtimeMonitorDaemon
+    public class RealtimeMonitorDaemon : IDisposable
     {
         private readonly List<FileSystemWatcher> _watchers = new();
         private readonly long _thresholdBytes;
         private readonly string[] _monitoredDirs;
         private readonly ConcurrentDictionary<string, long> _accumulatedFileSizes = new();
         private readonly SemaphoreSlim _checkSemaphore = new(1, 1);
-        private Timer? _debounceTimer;
+        private readonly Timer _debounceTimer;
+        private bool _disposed;
 
         public RealtimeMonitorDaemon(long thresholdBytes = 2L * 1024 * 1024 * 1024) // Default 2 GB
         {
@@ -33,6 +34,12 @@ namespace Optimax.Core
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Microsoft\\Windows\\INetCache"),
                 Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "D3DSCache")
             };
+
+            // Persistent timer to avoid re-allocations and race conditions
+            _debounceTimer = new Timer(async _ =>
+            {
+                await DebouncedCheckJunkThresholdAsync();
+            }, null, Timeout.Infinite, Timeout.Infinite);
         }
 
         public Task StartMonitoringAsync(CancellationToken ct)
@@ -69,13 +76,7 @@ namespace Optimax.Core
             // Register cancellation cleanup
             ct.Register(() =>
             {
-                _debounceTimer?.Dispose();
-                foreach (var w in _watchers)
-                {
-                    w.EnableRaisingEvents = false;
-                    w.Dispose();
-                }
-                _watchers.Clear();
+                Dispose();
             });
 
             return Task.CompletedTask;
@@ -104,12 +105,9 @@ namespace Optimax.Core
 
         private void ScheduleDebouncedCheck()
         {
-            // Debounce event processing: Wait 500ms after last event before checking threshold
-            _debounceTimer?.Dispose();
-            _debounceTimer = new Timer(async _ =>
-            {
-                await DebouncedCheckJunkThresholdAsync();
-            }, null, 500, Timeout.Infinite);
+            if (_disposed) return;
+            // Thread-safe timer reset without new object allocation
+            _debounceTimer.Change(500, Timeout.Infinite);
         }
 
         private async Task DebouncedCheckJunkThresholdAsync()
@@ -163,35 +161,35 @@ namespace Optimax.Core
             catch (Exception ex) { OptimaxLogger.Trace("IPC monitor notification send failed", ex); }
         }
 
-
         private static long FastGetDirectorySize(string path)
         {
             long total = 0;
-            var queue = new Queue<string>();
-            queue.Enqueue(path);
-
-            while (queue.Count > 0)
+            try
             {
-                string current = queue.Dequeue();
-                try
+                var dirInfo = new DirectoryInfo(path);
+                foreach (var file in dirInfo.EnumerateFiles("*", SearchOption.AllDirectories))
                 {
-                    var dirInfo = new DirectoryInfo(current);
-                    FileInfo[] files = dirInfo.GetFiles();
-                    foreach (var file in files)
-                    {
-                        try { total += file.Length; } catch (Exception ex) { OptimaxLogger.Trace($"Cannot read file size in monitor: {file.FullName}", ex); }
-                    }
-
-                    DirectoryInfo[] subDirs = dirInfo.GetDirectories();
-                    foreach (var sd in subDirs)
-                    {
-                        queue.Enqueue(sd.FullName);
-                    }
+                    try { total += file.Length; } catch { }
                 }
-                catch (Exception ex) { OptimaxLogger.Trace($"Directory size calculation failed for: {current}", ex); }
             }
+            catch (Exception ex) { OptimaxLogger.Trace($"Directory size calculation failed for: {path}", ex); }
 
             return total;
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+
+            _debounceTimer.Dispose();
+            _checkSemaphore.Dispose();
+            foreach (var w in _watchers)
+            {
+                w.EnableRaisingEvents = false;
+                w.Dispose();
+            }
+            _watchers.Clear();
         }
     }
 }

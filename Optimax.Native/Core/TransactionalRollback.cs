@@ -114,9 +114,17 @@ namespace Optimax.Core
             string packageDir = Path.Combine(_backupRoot, package.BackupId);
             Directory.CreateDirectory(packageDir);
             string jsonPath = Path.Combine(packageDir, "snapshot.json");
+            string hashPath = Path.Combine(packageDir, "snapshot.sha256");
 
             string json = JsonSerializer.Serialize(package, OptimaxJsonContext.Default.SystemStateBackupPackage);
             File.WriteAllText(jsonPath, json);
+
+            using var sha256 = System.Security.Cryptography.SHA256.Create();
+            byte[] hashBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(json));
+            string hashHex = Convert.ToHexString(hashBytes);
+            File.WriteAllText(hashPath, hashHex);
+
+            OptimaxLogger.Warn($"[AUDIT TRAIL] Created backup snapshot ID [{package.BackupId}] with SHA256 checksum: {hashHex}");
             return package.BackupId;
         }
 
@@ -124,10 +132,30 @@ namespace Optimax.Core
         {
             if (string.IsNullOrWhiteSpace(backupId) || backupId.Contains("..") || backupId.Contains('/') || backupId.Contains('\\')) return false;
             string jsonPath = Path.Combine(_backupRoot, backupId, "snapshot.json");
+            string hashPath = Path.Combine(_backupRoot, backupId, "snapshot.sha256");
+
             if (!File.Exists(jsonPath)) return false;
 
-            var package = JsonSerializer.Deserialize(File.ReadAllText(jsonPath), OptimaxJsonContext.Default.SystemStateBackupPackage);
+            string jsonContent = File.ReadAllText(jsonPath);
+
+            if (File.Exists(hashPath))
+            {
+                string storedHash = File.ReadAllText(hashPath).Trim();
+                using var sha256 = System.Security.Cryptography.SHA256.Create();
+                byte[] hashBytes = sha256.ComputeHash(System.Text.Encoding.UTF8.GetBytes(jsonContent));
+                string computedHash = Convert.ToHexString(hashBytes);
+
+                if (!string.Equals(storedHash, computedHash, StringComparison.OrdinalIgnoreCase))
+                {
+                    OptimaxLogger.Error($"[SECURITY AUDIT] Snapshot SHA256 integrity verification failed for Backup ID: {backupId}. Aborting rollback.", null);
+                    return false;
+                }
+            }
+
+            var package = JsonSerializer.Deserialize(jsonContent, OptimaxJsonContext.Default.SystemStateBackupPackage);
             if (package == null) return false;
+
+            bool hasError = false;
 
             // 1. Restore Registry Entries
             foreach (var reg in package.RegistryEntries)
@@ -165,9 +193,12 @@ namespace Optimax.Core
                         }
                     }
                 }
-                catch (Exception ex) { OptimaxLogger.Error($"Failed to rollback registry key: {reg.KeyPath}\\{reg.ValueName}", ex); }
+                catch (Exception ex) 
+                { 
+                    hasError = true;
+                    OptimaxLogger.Error($"Failed to rollback registry key: {reg.KeyPath}\\{reg.ValueName}", ex); 
+                }
             }
-
 
             // 2. Restore Services via Win32 SCM
             foreach (var svc in package.ServiceEntries)
@@ -176,9 +207,13 @@ namespace Optimax.Core
                 {
                     ScmServiceManager.RestoreServiceState(svc.ServiceName, (ServiceStartMode)svc.OriginalStartMode, (ServiceControllerStatus)svc.OriginalStatus);
                 }
-                catch (Exception ex) { OptimaxLogger.Error($"Failed to rollback service: {svc.ServiceName}", ex); }
+                catch (Exception ex) 
+                { 
+                    hasError = true;
+                    OptimaxLogger.Error($"Failed to rollback service: {svc.ServiceName}", ex); 
+                }
             }
-            return true;
+            return !hasError;
         }
 
         public List<BackupItemDto> GetAvailableBackups()
@@ -301,5 +336,55 @@ namespace Optimax.Core
             return originalVal;
         }
     }
+
+    public class TransactionalScope : IDisposable
+    {
+        private readonly TransactionalRollbackManager _rollbackManager;
+        private readonly SystemStateBackupPackage _package;
+        private bool _isCommitted = false;
+
+        public string BackupId => _package.BackupId;
+        public SystemStateBackupPackage Package => _package;
+
+        public TransactionalScope(TransactionalRollbackManager rollbackManager)
+        {
+            _rollbackManager = rollbackManager ?? throw new ArgumentNullException(nameof(rollbackManager));
+            _package = _rollbackManager.CreatePackage();
+        }
+
+        public void SnapshotRegistryKey(RegistryKey rootKey, string subKeyPath, string valueName)
+        {
+            _rollbackManager.SnapshotRegistryKey(_package, rootKey, subKeyPath, valueName);
+        }
+
+        public void SnapshotService(string serviceName)
+        {
+            _rollbackManager.SnapshotService(_package, serviceName);
+        }
+
+        public void Commit()
+        {
+            _rollbackManager.PersistPackage(_package);
+            _isCommitted = true;
+        }
+
+        public void Dispose()
+        {
+            if (!_isCommitted)
+            {
+                OptimaxLogger.Warn($"[TRANSACTION ROLLBACK] Transaction scope disposed without explicit Commit. Triggering auto-rollback for Backup ID: {_package.BackupId}");
+                try
+                {
+                    _rollbackManager.PersistPackage(_package);
+                    _rollbackManager.ExecuteRollback(_package.BackupId);
+                }
+                catch (Exception ex)
+                {
+                    OptimaxLogger.Error($"Failed auto-rollback for Backup ID: {_package.BackupId}", ex);
+                }
+            }
+        }
+    }
 }
+
 

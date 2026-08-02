@@ -1,8 +1,6 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.IO.Pipes;
-using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text.Json;
@@ -15,25 +13,9 @@ namespace Optimax.IPC
     public class NamedPipeServer
     {
         private const string PIPE_NAME = "OptimaxIPC";
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool GetNamedPipeClientProcessId(IntPtr Pipe, out uint ClientProcessId);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern IntPtr OpenProcess(uint processAccess, bool bInheritHandle, uint processId);
-
-        [DllImport("advapi32.dll", SetLastError = true)]
-        private static extern bool OpenProcessToken(IntPtr ProcessHandle, uint DesiredAccess, out IntPtr TokenHandle);
-
-        [DllImport("advapi32.dll", SetLastError = true)]
-        private static extern bool GetTokenInformation(IntPtr TokenHandle, int TokenInformationClass, out int TokenInformation, int TokenInformationLength, out int ReturnLength);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool CloseHandle(IntPtr hObject);
-
-        private const uint PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
-        private const uint TOKEN_QUERY = 0x0008;
-        private const int TokenElevation = 20;
+        private const int MAX_CONCURRENT_CLIENTS = 5;
+        private static readonly TimeSpan CLIENT_REQUEST_TIMEOUT = TimeSpan.FromSeconds(8);
+        private readonly SemaphoreSlim _clientThrottle = new SemaphoreSlim(MAX_CONCURRENT_CLIENTS, MAX_CONCURRENT_CLIENTS);
 
         public async Task StartServerAsync(Func<IPCRequest, Task<IPCResponse>> handler, CancellationToken ct)
         {
@@ -45,119 +27,145 @@ namespace Optimax.IPC
 
         public async Task StartServerStreamAsync(Func<IPCRequest, Func<IPCStreamChunk, Task>, Task<IPCResponse>> handler, CancellationToken ct)
         {
+            var pipeSecurity = CreateSecurePipeSecurity();
+
             while (!ct.IsCancellationRequested)
             {
+                NamedPipeServerStream? pipe = null;
                 try
                 {
-                    var pipeSecurity = new PipeSecurity();
-                    var systemSid = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
-                    var adminSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+                    await _clientThrottle.WaitAsync(ct);
 
-                    pipeSecurity.AddAccessRule(new PipeAccessRule(systemSid, PipeAccessRights.FullControl, AccessControlType.Allow));
-                    pipeSecurity.AddAccessRule(new PipeAccessRule(adminSid, PipeAccessRights.FullControl, AccessControlType.Allow));
-
-                    using var pipe = NamedPipeServerStreamAot.Create(PIPE_NAME, pipeSecurity);
+                    pipe = NamedPipeServerStreamAot.Create(PIPE_NAME, pipeSecurity);
                     await pipe.WaitForConnectionAsync(ct);
 
-                    // Client validation: Verify client PID and Token elevation
-                    if (pipe.SafePipeHandle.IsInvalid || !IsClientAuthorized(pipe.SafePipeHandle.DangerousGetHandle()))
+                    var activePipe = pipe;
+                    pipe = null; // Ownership transferred to async background worker Task
+
+                    _ = Task.Run(async () =>
                     {
-                        pipe.Disconnect();
-                        continue;
-                    }
-
-                    using var reader = new StreamReader(pipe);
-                    using var writer = new StreamWriter(pipe) { AutoFlush = true };
-
-                    string? line = await reader.ReadLineAsync(ct);
-                    if (line != null)
-                    {
-                        var req = JsonSerializer.Deserialize(line, OptimaxJsonContext.Default.IPCRequest);
-                        IPCResponse res;
-
-                        int chunkIndex = 0;
-                        Func<IPCStreamChunk, Task> sendChunk = async (chunk) =>
+                        using (activePipe)
                         {
-                            string chunkJson = JsonSerializer.Serialize(chunk, OptimaxJsonContext.Default.IPCStreamChunk);
-                            await writer.WriteLineAsync(chunkJson.AsMemory(), ct);
-                        };
+                            using var clientCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                            clientCts.CancelAfter(CLIENT_REQUEST_TIMEOUT);
 
-                        if (req != null)
-                        {
-                            res = await handler(req, sendChunk);
+                            try
+                            {
+                                // Strict Privilege Verification
+                                if (activePipe.SafePipeHandle.IsInvalid || !IsClientAuthorized(activePipe))
+                                {
+                                    OptimaxLogger.Warn("IPC client connection rejected: Unauthorized client caller.");
+                                    if (activePipe.IsConnected) activePipe.Disconnect();
+                                    return;
+                                }
+
+                                using var reader = new StreamReader(activePipe);
+                                using var writer = new StreamWriter(activePipe) { AutoFlush = true };
+
+                                string? line = await reader.ReadLineAsync(clientCts.Token);
+                                if (line != null)
+                                {
+                                    var req = JsonSerializer.Deserialize(line, OptimaxJsonContext.Default.IPCRequest);
+                                    if (req != null)
+                                    {
+                                        string cid = !string.IsNullOrWhiteSpace(req.RequestGuid) ? req.RequestGuid : Guid.NewGuid().ToString("N").Substring(0, 8);
+                                        OptimaxLogger.SetCorrelationId(cid);
+
+                                        IPCResponse res;
+                                        int chunkIndex = 0;
+
+                                        Func<IPCStreamChunk, Task> sendChunk = async (chunk) =>
+                                        {
+                                            string chunkJson = JsonSerializer.Serialize(chunk, OptimaxJsonContext.Default.IPCStreamChunk);
+                                            await writer.WriteLineAsync(chunkJson.AsMemory(), clientCts.Token);
+                                        };
+
+                                        res = await handler(req, sendChunk);
+
+                                        var finalChunk = new IPCStreamChunk(
+                                            IsFinal: true,
+                                            ChunkIndex: ++chunkIndex,
+                                            ProgressPct: 100,
+                                            Message: res.Message,
+                                            PayloadJson: res.PayloadJson
+                                        );
+
+                                        string finalJson = JsonSerializer.Serialize(finalChunk, OptimaxJsonContext.Default.IPCStreamChunk);
+                                        await writer.WriteLineAsync(finalJson.AsMemory(), clientCts.Token);
+                                    }
+                                    else
+                                    {
+                                        var errorResponse = new IPCResponse(false, "Invalid JSON IPC Request", null);
+                                        string errorJson = JsonSerializer.Serialize(errorResponse, OptimaxJsonContext.Default.IPCResponse);
+                                        await writer.WriteLineAsync(errorJson.AsMemory(), clientCts.Token);
+                                    }
+                                }
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                OptimaxLogger.Warn("IPC client processing timed out (DoS mitigation triggered).");
+                            }
+                            catch (Exception ex)
+                            {
+                                OptimaxLogger.Warn("IPC client processing error", ex);
+                            }
+                            finally
+                            {
+                                OptimaxLogger.ClearCorrelationId();
+                                _clientThrottle.Release();
+                            }
                         }
-                        else
-                        {
-                            res = new IPCResponse(false, "Invalid JSON IPC Request", null);
-                        }
-
-                        // Send final chunk / completion response
-                        var finalChunk = new IPCStreamChunk(
-                            IsFinal: true,
-                            ChunkIndex: ++chunkIndex,
-                            ProgressPct: 100,
-                            Message: res.Message,
-                            PayloadJson: res.PayloadJson
-                        );
-
-                        string finalJson = JsonSerializer.Serialize(finalChunk, OptimaxJsonContext.Default.IPCStreamChunk);
-                        await writer.WriteLineAsync(finalJson.AsMemory(), ct);
-                    }
+                    }, ct);
                 }
                 catch (OperationCanceledException)
                 {
+                    pipe?.Dispose();
+                    _clientThrottle.Release();
                     break;
                 }
-                catch
+                catch (Exception ex)
                 {
-                    await Task.Delay(500, ct);
+                    pipe?.Dispose();
+                    _clientThrottle.Release();
+                    OptimaxLogger.Error("IPC pipe accept error", ex);
+                    await Task.Delay(200, ct);
                 }
             }
         }
 
-        private static bool IsClientAuthorized(IntPtr pipeHandle)
+        private static PipeSecurity CreateSecurePipeSecurity()
         {
-            try
-            {
-                if (GetNamedPipeClientProcessId(pipeHandle, out uint clientPid))
-                {
-                    if (clientPid > 0)
-                    {
-                        return IsProcessElevated(clientPid);
-                    }
-                }
-            }
-            catch (Exception ex) { OptimaxLogger.Trace("IPC client authorization check failed", ex); }
-            return false;
+            var pipeSecurity = new PipeSecurity();
+            var systemSid = new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null);
+            var adminSid = new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null);
+
+            // Allow ONLY LocalSystem and BuiltinAdministrators. No Everyone access.
+            pipeSecurity.AddAccessRule(new PipeAccessRule(systemSid, PipeAccessRights.FullControl, AccessControlType.Allow));
+            pipeSecurity.AddAccessRule(new PipeAccessRule(adminSid, PipeAccessRights.FullControl, AccessControlType.Allow));
+            pipeSecurity.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+
+            return pipeSecurity;
         }
 
-        private static bool IsProcessElevated(uint pid)
+        private static bool IsClientAuthorized(NamedPipeServerStream pipe)
         {
-            IntPtr hProcess = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
-            if (hProcess == IntPtr.Zero) return false;
-
             try
             {
-                if (OpenProcessToken(hProcess, TOKEN_QUERY, out IntPtr hToken))
+                bool isAuthorized = false;
+                pipe.RunAsClient(() =>
                 {
-                    try
-                    {
-                        if (GetTokenInformation(hToken, TokenElevation, out int isElevated, sizeof(int), out _))
-                        {
-                            return isElevated != 0;
-                        }
-                    }
-                    finally
-                    {
-                        CloseHandle(hToken);
-                    }
-                }
+                    using var identity = WindowsIdentity.GetCurrent();
+                    var principal = new WindowsPrincipal(identity);
+                    isAuthorized = (principal.IsInRole(WindowsBuiltInRole.Administrator) || identity.IsSystem) 
+                                   && identity.ImpersonationLevel >= TokenImpersonationLevel.Impersonation;
+                });
+                return isAuthorized;
             }
-            finally
+            catch (Exception ex)
             {
-                CloseHandle(hProcess);
+                OptimaxLogger.Warn($"IPC client authorization check failed: {ex.Message}", ex);
+                return false;
             }
-            return false;
         }
     }
 
@@ -178,7 +186,14 @@ namespace Optimax.IPC
             {
                 pipe.SetAccessControl(pipeSecurity);
             }
-            catch (Exception ex) { OptimaxLogger.Trace("PipeSecurity SetAccessControl skipped (expected on some OS versions)", ex); }
+            catch (Exception ex)
+            {
+                // CRITICAL SAFETY FIX: If pipe security ACL cannot be applied, MUST DISPOSE AND FAIL.
+                // Never proceed with default un-secured pipe!
+                pipe.Dispose();
+                OptimaxLogger.Error("CRITICAL: Failed to apply security access control to NamedPipeServerStream. Pipe creation aborted.", ex);
+                throw new InvalidOperationException($"Failed to secure IPC pipe '{pipeName}': {ex.Message}", ex);
+            }
 
             return pipe;
         }

@@ -1,10 +1,11 @@
 using System;
 using System.IO;
+using System.Threading;
 
 namespace Optimax.Core
 {
     /// <summary>
-    /// Lightweight, AOT-compatible centralized logging engine.
+    /// Lightweight, AOT-compatible centralized logging engine with Correlation ID support.
     /// Writes structured logs to %ProgramData%\Optimax\Logs\optimax_yyyy-MM-dd.log.
     /// Thread-safe via file-level locking. Logger itself never throws.
     /// </summary>
@@ -16,6 +17,28 @@ namespace Optimax.Core
 
         private static readonly object _lock = new();
         private static bool _initialized;
+        private static readonly AsyncLocal<string?> _correlationId = new();
+
+        public static string? CurrentCorrelationId => _correlationId.Value;
+
+        public static void SetCorrelationId(string? id)
+        {
+            _correlationId.Value = id;
+        }
+
+        public static string EnsureCorrelationId()
+        {
+            if (string.IsNullOrEmpty(_correlationId.Value))
+            {
+                _correlationId.Value = Guid.NewGuid().ToString("N").Substring(0, 8);
+            }
+            return _correlationId.Value;
+        }
+
+        public static void ClearCorrelationId()
+        {
+            _correlationId.Value = null;
+        }
 
         private static void EnsureDirectory()
         {
@@ -25,8 +48,7 @@ namespace Optimax.Core
         }
 
         /// <summary>
-        /// Log low-priority diagnostic information for expected/frequent failures
-        /// (e.g., file access denied, process already exited).
+        /// Log low-priority diagnostic information for expected/frequent failures.
         /// </summary>
         public static void Trace(string context, Exception? ex = null)
         {
@@ -34,8 +56,7 @@ namespace Optimax.Core
         }
 
         /// <summary>
-        /// Log meaningful operational warnings that help with production debugging
-        /// (e.g., registry write failure, service control error, API call failure).
+        /// Log meaningful operational warnings that help with production debugging.
         /// </summary>
         public static void Warn(string context, Exception? ex = null)
         {
@@ -43,8 +64,7 @@ namespace Optimax.Core
         }
 
         /// <summary>
-        /// Log critical errors that indicate a broken feature or data corruption risk
-        /// (e.g., rollback failure, snapshot corruption, kernel API failure).
+        /// Log critical errors that indicate a broken feature or data corruption risk.
         /// </summary>
         public static void Error(string context, Exception? ex = null)
         {
@@ -58,7 +78,8 @@ namespace Optimax.Core
                 EnsureDirectory();
                 string logFile = Path.Combine(LogDir, $"optimax_{DateTime.Now:yyyy-MM-dd}.log");
                 string timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
-                string line = $"[{timestamp}] [{level}] {context}";
+                string cid = _correlationId.Value ?? "-";
+                string line = $"[{timestamp}] [{level}] [CID:{cid}] {context}";
                 if (ex != null)
                 {
                     line += $" | {ex.GetType().Name}: {ex.Message}";

@@ -6,7 +6,7 @@ using Optimax.IPC;
 
 namespace Optimax.Core
 {
-    public class DeepRegistryScanner
+    public class DeepRegistryScanner : IDeepRegistryScanner
     {
         private static readonly HashSet<string> WhitelistedSystemPaths;
 
@@ -363,41 +363,7 @@ namespace Optimax.Core
 
         private static bool IsInvalidFilePath(string rawPath)
         {
-            if (string.IsNullOrWhiteSpace(rawPath)) return false;
-
-            string path = Environment.ExpandEnvironmentVariables(rawPath).Trim();
-
-            // Properly extract executable path if arguments or quotes are present
-            if (path.StartsWith("\""))
-            {
-                int endQuote = path.IndexOf('"', 1);
-                if (endQuote > 1) path = path.Substring(1, endQuote - 1);
-            }
-            else
-            {
-                int exeIdx = path.IndexOf(".exe", StringComparison.OrdinalIgnoreCase);
-                if (exeIdx > 0 && exeIdx + 4 < path.Length && (path[exeIdx + 4] == ' ' || path[exeIdx + 4] == '/' || path[exeIdx + 4] == '-'))
-                {
-                    path = path.Substring(0, exeIdx + 4);
-                }
-            }
-
-            path = path.Trim('"', ' ', '\'');
-
-            // Whitelist System paths
-            foreach (var safePath in WhitelistedSystemPaths)
-            {
-                if (path.StartsWith(safePath, StringComparison.OrdinalIgnoreCase)) return false;
-            }
-
-            // Must look like absolute Windows path (e.g., C:\...)
-            if (path.Length >= 3 && path[1] == ':' && (path[2] == '\\' || path[2] == '/'))
-            {
-                return !File.Exists(path) && !Directory.Exists(path);
-            }
-
-            return false;
+            return SafeRegistryChecker.IsPathOrphaned(rawPath);
         }
-
     }
 }

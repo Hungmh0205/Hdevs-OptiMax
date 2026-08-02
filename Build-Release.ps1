@@ -1,32 +1,67 @@
-# Automatic Build & Packaging Script for OPTIMAX (.NET Native AOT + WPF)
+<#
+.SYNOPSIS
+    Automated Production Build & Packaging Script for OPTIMAX (.NET Native AOT + WPF)
+.DESCRIPTION
+    Builds Optimax.Native (Native AOT Core) and Optimax.UI (WPF), bundles rule sets,
+    generates SHA256 integrity checksums, and packages release archives.
+#>
+param(
+    [string]$Version = "release",
+    [string]$Architecture = "win-x64",
+    [string]$Configuration = "Release",
+    [string]$OutputDir = "",
+    [switch]$SkipZip = $false
+)
+
 $ErrorActionPreference = "Stop"
-$Version = "release"
-$ReleaseName = "Optimax-$Version"
-$OutputDir = Join-Path $PSScriptRoot "publish"
-$ZipFile = Join-Path $PSScriptRoot "Optimax-$Version-Latest.zip"
+$ReleaseName = "Optimax-$Version-$Architecture"
 
-Write-Host "Building OPTIMAX Release Package: $ReleaseName" -ForegroundColor Cyan
-Write-Host "--------------------------------------------------"
+if ([string]::IsNullOrWhiteSpace($OutputDir)) {
+    $OutputDir = Join-Path $PSScriptRoot "publish"
+}
 
-# 0. Terminate any running instances of Optimax
-Get-Process -Name Optimax, Optimax.UI -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-cmd.exe /c "taskkill /F /IM Optimax.exe /T 2>nul & taskkill /F /IM Optimax.UI.exe /T 2>nul & exit 0"
-Start-Sleep -Milliseconds 1500
+$ZipFile = Join-Path $PSScriptRoot "Optimax-$Version-$Architecture-Latest.zip"
+$ChecksumFile = "$ZipFile.sha256"
 
-# 1. Clean previous release output
+Write-Host "==================================================" -ForegroundColor Cyan
+Write-Host " Building OPTIMAX Production Package: $ReleaseName" -ForegroundColor Cyan
+Write-Host " Target Architecture: $Architecture | Config: $Configuration" -ForegroundColor Cyan
+Write-Host " Output Directory:    $OutputDir" -ForegroundColor Cyan
+Write-Host "==================================================" -ForegroundColor Cyan
+
+# 1. Terminate any running instances of Optimax processes to unlock output files
+Write-Host "[INFO] Terminating running Optimax processes..." -ForegroundColor Yellow
+try {
+    Get-Process -Name "Optimax", "Optimax.UI" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    cmd.exe /c "taskkill /F /IM Optimax.exe /T 2>nul & taskkill /F /IM Optimax.UI.exe /T 2>nul & exit 0" | Out-Null
+    Start-Sleep -Milliseconds 500
+} catch {
+    Write-Host "[WARN] Process termination warning: $_" -ForegroundColor Yellow
+}
+
+# 2. Clean previous release output safely with Fallback if files are locked
+Write-Host "[INFO] Preparing publish output directory..." -ForegroundColor Yellow
 if (Test-Path $OutputDir) {
-    Remove-Item -Path $OutputDir -Recurse -Force -ErrorAction SilentlyContinue
+    try {
+        Remove-Item -Path $OutputDir -Recurse -Force -ErrorAction Stop
+    } catch {
+        Write-Host "[WARN] Cannot clean existing '$OutputDir' directory directly (file locked by elevated process)." -ForegroundColor Yellow
+        $OutputDir = Join-Path $PSScriptRoot "publish_release"
+        Write-Host "[INFO] Redirecting publish output to '$OutputDir'..." -ForegroundColor Yellow
+        if (Test-Path $OutputDir) {
+            Remove-Item -Path $OutputDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
+    }
 }
 New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 
-if (Test-Path $ZipFile) {
-    Remove-Item -Path $ZipFile -Force -ErrorAction SilentlyContinue
-}
+if (Test-Path $ZipFile) { Remove-Item -Path $ZipFile -Force -ErrorAction SilentlyContinue }
+if (Test-Path $ChecksumFile) { Remove-Item -Path $ChecksumFile -Force -ErrorAction SilentlyContinue }
 
-# 2. Build & Publish Optimax.Native (Native AOT Engine)
-Write-Host "[INFO] Publishing Optimax.Native (.NET Native AOT)..." -ForegroundColor Yellow
+# 3. Build & Publish Optimax.Native (Native AOT Engine)
+Write-Host "[INFO] Publishing Optimax.Native (.NET Native AOT Core)..." -ForegroundColor Yellow
 $nativeProj = Join-Path $PSScriptRoot "Optimax.Native\Optimax.csproj"
-dotnet publish $nativeProj -c Release -r win-x64 -o "$OutputDir"
+dotnet publish $nativeProj -c $Configuration -r $Architecture -o "$OutputDir"
 
 $nativeExe = Join-Path $OutputDir "Optimax.exe"
 if (Test-Path $nativeExe) {
@@ -36,10 +71,10 @@ if (Test-Path $nativeExe) {
     exit 1
 }
 
-# 3. Build & Publish Optimax.UI (WPF Desktop App)
+# 4. Build & Publish Optimax.UI (WPF Desktop App)
 Write-Host "[INFO] Publishing Optimax.UI (WPF Desktop App)..." -ForegroundColor Yellow
 $uiProj = Join-Path $PSScriptRoot "Optimax.UI\Optimax.UI.csproj"
-dotnet publish $uiProj -c Release -r win-x64 --self-contained true -o "$OutputDir"
+dotnet publish $uiProj -c $Configuration -r $Architecture --self-contained true -o "$OutputDir"
 
 $uiExe = Join-Path $OutputDir "Optimax.UI.exe"
 if (Test-Path $uiExe) {
@@ -49,8 +84,8 @@ if (Test-Path $uiExe) {
     exit 1
 }
 
-# 4. Copy Rule Datasets & Resources
-Write-Host "[INFO] Bundling rule databases and documentation..." -ForegroundColor Yellow
+# 5. Copy Rule Datasets & Resources
+Write-Host "[INFO] Bundling rule databases, assets, and documentation..." -ForegroundColor Yellow
 
 $winapp2Src = Join-Path $PSScriptRoot "Winapp2.ini"
 if (Test-Path $winapp2Src) {
@@ -71,17 +106,31 @@ if (Test-Path $readmeSrc) {
 }
 
 $rulesSrc = Join-Path $PSScriptRoot "Optimax.Native\rules"
+$targetRulesDir = Join-Path $OutputDir "rules"
+New-Item -ItemType Directory -Path $targetRulesDir -Force | Out-Null
 if (Test-Path $rulesSrc) {
-    Copy-Item -Path $rulesSrc -Destination $OutputDir -Recurse -Force
+    Copy-Item -Path "$rulesSrc\*" -Destination $targetRulesDir -Recurse -Force -ErrorAction SilentlyContinue
     Write-Host "[SUCCESS] Bundled custom rules" -ForegroundColor Green
 }
 
-# 5. Compress to Zip Release archive
-Write-Host "[INFO] Packaging Release Zip Archive..." -ForegroundColor Yellow
-if (Test-Path $ZipFile) { Remove-Item -Path $ZipFile -Force -ErrorAction SilentlyContinue }
-Compress-Archive -Path "$OutputDir\*" -DestinationPath $ZipFile -Force
+# 6. Compress to Zip Release Archive & Generate Checksum
+if (-not $SkipZip) {
+    Write-Host "[INFO] Packaging Release Zip Archive..." -ForegroundColor Yellow
+    Compress-Archive -Path "$OutputDir\*" -DestinationPath $ZipFile -Force
+    
+    if (Test-Path $ZipFile) {
+        Write-Host "[INFO] Generating SHA256 integrity checksum..." -ForegroundColor Yellow
+        $hash = (Get-FileHash -Path $ZipFile -Algorithm SHA256).Hash
+        Set-Content -Path $ChecksumFile -Value $hash -Encoding UTF8
+        Write-Host "[SUCCESS] SHA256 Hash: $hash" -ForegroundColor Green
+    }
+}
 
-Write-Host "--------------------------------------------------"
-Write-Host "[SUCCESS] OPTIMAX Release Package Created Successfully" -ForegroundColor Green
-Write-Host "Output Directory: $OutputDir"
-Write-Host "Zip Archive:      $ZipFile"
+Write-Host "==================================================" -ForegroundColor Cyan
+Write-Host "[SUCCESS] OPTIMAX Production Build Completed!" -ForegroundColor Green
+Write-Host " Output Directory: $OutputDir"
+if (-not $SkipZip) {
+    Write-Host " Zip Archive:      $ZipFile"
+    Write-Host " SHA256 Checksum:  $ChecksumFile"
+}
+Write-Host "==================================================" -ForegroundColor Cyan

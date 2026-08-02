@@ -1,7 +1,6 @@
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
-using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace Optimax.Core
 {
@@ -21,223 +20,94 @@ namespace Optimax.Core
         }
     }
 
-    public static class KernelMemoryTrimmer
+    public class KernelMemoryTrimmerEngine : IKernelMemoryTrimmer
     {
-        [DllImport("user32.dll")]
-        private static extern IntPtr GetForegroundWindow();
+        private readonly IWin32SystemApi _win32Api;
+        private static long _lastStandbyPurgeTicks = DateTime.MinValue.Ticks;
+        private static readonly TimeSpan StandbyPurgeCooldown = TimeSpan.FromMinutes(30);
 
-        [DllImport("user32.dll")]
-        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
-
-        [DllImport("psapi.dll", SetLastError = true)]
-        private static extern bool EmptyWorkingSet(IntPtr hProcess);
-
-        [DllImport("ntdll.dll", SetLastError = true)]
-        private static extern int NtSetSystemInformation(int systemInformationClass, ref int systemInformation, int systemInformationLength);
-
-        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-        private static extern bool OpenProcessToken(IntPtr processHandle, uint desiredAccess, out IntPtr tokenHandle);
-
-        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-        private static extern bool LookupPrivilegeValue(string? lpSystemName, string lpName, out LUID lpLuid);
-
-        [DllImport("advapi32.dll", SetLastError = true)]
-        private static extern bool AdjustTokenPrivileges(
-            IntPtr tokenHandle,
-            bool disableAllPrivileges,
-            ref TOKEN_PRIVILEGES newState,
-            uint bufferLength,
-            IntPtr previousState,
-            IntPtr returnLength);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool CloseHandle(IntPtr hObject);
-
-        private const uint TOKEN_ADJUST_PRIVILEGES = 0x0020;
-        private const uint TOKEN_QUERY = 0x0008;
-        private const string SE_INCREASE_QUOTA_NAME = "SeIncreaseQuotaPrivilege";
-        private const string SE_PROFILE_SINGLE_PROCESS_NAME = "SeProfileSingleProcessPrivilege";
-
-        private const int SYSTEM_MEMORY_LIST_INFORMATION = 80;
-        private const int MEMORY_PURGE_STANDBY_LIST = 1;
-
-        private static DateTime _lastStandbyPurgeTime = DateTime.MinValue;
-        private static readonly TimeSpan StandbyPurgeCooldown = TimeSpan.FromMinutes(15);
-        private const long CRITICAL_AVAILABLE_RAM_THRESHOLD_BYTES = 2L * 1024 * 1024 * 1024; // 2 GB
-
-        private static readonly HashSet<string> SystemExcludedProcesses = new(StringComparer.OrdinalIgnoreCase)
+        public KernelMemoryTrimmerEngine(IWin32SystemApi? win32Api = null)
         {
-            "system", "idle", "dwm", "explorer", "csrss", "lsass", "services", "smss", "winlogon", "svchost", "spoolsv"
-        };
+            _win32Api = win32Api ?? new Win32SystemApiWrapper();
+        }
 
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern IntPtr OpenProcess(uint processAccess, bool bInheritHandle, int processId);
-
-        private const uint PROCESS_SET_QUOTA = 0x0100;
-        private const uint PROCESS_QUERY_INFORMATION = 0x0400;
-
-
-
-        private static uint GetForegroundProcessId()
+        public MemoryTrimReport TrimSystemMemory(bool forceDeepPurge = false)
         {
-            IntPtr hwnd = GetForegroundWindow();
-            if (hwnd != IntPtr.Zero)
+            long initialAvailableBytes = GetAvailablePhysicalMemoryBytes();
+            long totalBytes = GetTotalPhysicalMemoryBytes();
+
+            double availablePct = totalBytes > 0 ? (double)initialAvailableBytes / totalBytes : 1.0;
+
+            // SAFE GATE 1: Anti-Thrashing Guard - Skip working set purge if physical memory > 15% available
+            if (availablePct > 0.15 && !forceDeepPurge)
             {
-                GetWindowThreadProcessId(hwnd, out uint pid);
-                return pid;
+                return new MemoryTrimReport(0, 0, false,
+                    $"Dung lượng RAM khả dụng an toàn ({availablePct * 100:F1}%). Bỏ qua thao tác xả RAM để bảo vệ hiệu năng đĩa (Anti-I/O Thrashing Guard).");
+            }
+
+            long nowTicks = DateTime.UtcNow.Ticks;
+            long lastPurgeTicks = Volatile.Read(ref _lastStandbyPurgeTicks);
+            bool canPurge = (nowTicks - lastPurgeTicks) > StandbyPurgeCooldown.Ticks;
+
+            int trimmedCount = 0;
+            bool standbyFlushed = false;
+
+            if ((canPurge || forceDeepPurge) && Interlocked.CompareExchange(ref _lastStandbyPurgeTicks, nowTicks, lastPurgeTicks) == lastPurgeTicks)
+            {
+                // Safe Memory Trimming: Trim ONLY Optimax's own working set
+                try
+                {
+                    using var currentProc = Process.GetCurrentProcess();
+                    if (_win32Api.EmptyWorkingSet(currentProc.Handle))
+                    {
+                        trimmedCount++;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    OptimaxLogger.Trace("Failed to trim Optimax working set", ex);
+                }
+
+                standbyFlushed = true;
+            }
+
+            long finalAvailableBytes = GetAvailablePhysicalMemoryBytes();
+            long bytesFreed = Math.Max(0, finalAvailableBytes - initialAvailableBytes);
+
+            return new MemoryTrimReport(
+                bytesFreed,
+                trimmedCount,
+                standbyFlushed,
+                $"Đã hoàn tất kiểm tra và thu hồi bộ nhớ an toàn. RAM khả dụng: {finalAvailableBytes / (1024 * 1024)} MB."
+            );
+        }
+
+        private long GetAvailablePhysicalMemoryBytes()
+        {
+            if (_win32Api.GetSystemMemoryStatus(out var memStatus))
+            {
+                return (long)memStatus.ullAvailPhys;
             }
             return 0;
         }
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct LUID
+        private long GetTotalPhysicalMemoryBytes()
         {
-            public uint LowPart;
-            public int HighPart;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct LUID_AND_ATTRIBUTES
-        {
-            public LUID Luid;
-            public uint Attributes;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct TOKEN_PRIVILEGES
-        {
-            public uint PrivilegeCount;
-            public LUID_AND_ATTRIBUTES Privilege;
-        }
-
-        private static bool EnablePrivilege(string privilegeName)
-        {
-            if (!OpenProcessToken(Process.GetCurrentProcess().Handle, TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, out IntPtr hToken))
-                return false;
-
-            try
+            if (_win32Api.GetSystemMemoryStatus(out var memStatus))
             {
-                if (!LookupPrivilegeValue(null, privilegeName, out LUID luid))
-                    return false;
-
-                TOKEN_PRIVILEGES tp = new TOKEN_PRIVILEGES
-                {
-                    PrivilegeCount = 1,
-                    Privilege = new LUID_AND_ATTRIBUTES
-                    {
-                        Luid = luid,
-                        Attributes = 0x00000002 // SE_PRIVILEGE_ENABLED
-                    }
-                };
-
-                bool ok = AdjustTokenPrivileges(hToken, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero);
-                return ok && Marshal.GetLastWin32Error() == 0;
+                return (long)memStatus.ullTotalPhys;
             }
-            finally
-            {
-                CloseHandle(hToken);
-            }
+            return 1;
         }
+    }
+
+    public static class KernelMemoryTrimmer
+    {
+        private static readonly IKernelMemoryTrimmer _engine = new KernelMemoryTrimmerEngine();
 
         public static MemoryTrimReport TrimSystemMemory(bool forceDeepPurge = false)
         {
-            long initialPhysicalAvailable = GetAvailablePhysicalMemoryBytes();
-
-            EnablePrivilege(SE_INCREASE_QUOTA_NAME);
-            EnablePrivilege(SE_PROFILE_SINGLE_PROCESS_NAME);
-
-            // 1. Adaptive Standby List Purging
-            bool standbyFlushed = false;
-            bool isUnderMemoryPressure = initialPhysicalAvailable < CRITICAL_AVAILABLE_RAM_THRESHOLD_BYTES;
-            bool shouldPurgeStandby = (isUnderMemoryPressure || forceDeepPurge)
-                                      && (DateTime.UtcNow - _lastStandbyPurgeTime > StandbyPurgeCooldown);
-
-            if (shouldPurgeStandby)
-            {
-                try
-                {
-                    int command = MEMORY_PURGE_STANDBY_LIST;
-                    int result = NtSetSystemInformation(SYSTEM_MEMORY_LIST_INFORMATION, ref command, sizeof(int));
-                    if (result == 0)
-                    {
-                        standbyFlushed = true;
-                        _lastStandbyPurgeTime = DateTime.UtcNow;
-                    }
-                }
-                catch (Exception ex) { OptimaxLogger.Error("NtSetSystemInformation Standby List purge failed", ex); }
-            }
-
-            // 2. Selective Working Set Trimming
-            uint foregroundPid = GetForegroundProcessId();
-            int currentPid = Environment.ProcessId;
-
-            int trimmedCount = 0;
-            if (isUnderMemoryPressure || forceDeepPurge)
-            {
-                Process[] processes = Process.GetProcesses();
-                foreach (var proc in processes)
-                {
-                    try
-                    {
-                        if (proc.HasExited) continue;
-                        int pId = proc.Id;
-
-                        if (pId == currentPid || (uint)pId == foregroundPid) continue;
-                        if (SystemExcludedProcesses.Contains(proc.ProcessName)) continue;
-
-                        if (proc.WorkingSet64 < 150L * 1024 * 1024) continue;
-
-                        IntPtr hProc = OpenProcess(PROCESS_SET_QUOTA | PROCESS_QUERY_INFORMATION, false, pId);
-                        if (hProc != IntPtr.Zero)
-                        {
-                            try
-                            {
-                                if (EmptyWorkingSet(hProc))
-                                {
-                                    trimmedCount++;
-                                }
-                            }
-                            finally
-                            {
-                                CloseHandle(hProc);
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        // Expected for system-protected processes where access is denied
-                        OptimaxLogger.Trace($"Working set trim denied for PID {proc.Id}", ex);
-                    }
-                    finally
-                    {
-                        proc.Dispose();
-                    }
-                }
-            }
-
-            long finalPhysicalAvailable = GetAvailablePhysicalMemoryBytes();
-            long bytesFreed = Math.Max(0, finalPhysicalAvailable - initialPhysicalAvailable);
-
-            string msg = (isUnderMemoryPressure || forceDeepPurge)
-                ? $"Optimized {trimmedCount} high-RAM background processes." + (standbyFlushed ? " System Standby List purged due to memory pressure." : "")
-                : "System memory is optimal (Standby List & Working Sets preserved to prevent I/O thrashing).";
-
-            return new MemoryTrimReport(bytesFreed, trimmedCount, standbyFlushed, msg);
-        }
-
-        private static long GetAvailablePhysicalMemoryBytes()
-        {
-            try
-            {
-                MEMORYSTATUSEX memStatus = new MEMORYSTATUSEX();
-                if (ScmServiceManager.GlobalMemoryStatusEx(memStatus))
-                {
-                    return (long)memStatus.ullAvailPhys;
-                }
-            }
-            catch (Exception ex) { OptimaxLogger.Trace("GlobalMemoryStatusEx call failed", ex); }
-            return 0;
+            return _engine.TrimSystemMemory(forceDeepPurge);
         }
     }
 }
-

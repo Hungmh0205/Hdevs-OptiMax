@@ -20,26 +20,30 @@ namespace Optimax.UI
             bool enable = true, 
             int serviceStartMode = 2, 
             string[]? flags = null,
-            Action<IPCStreamChunk>? onProgressChunk = null)
+            Action<IPCStreamChunk>? onProgressChunk = null,
+            System.Threading.CancellationToken cancellationToken = default)
         {
             for (int attempt = 0; attempt < 2; attempt++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 try
                 {
                     using var pipe = new NamedPipeClientStream(".", PIPE_NAME, PipeDirection.InOut);
-                    await pipe.ConnectAsync(attempt == 0 ? 800 : 2000);
+                    await pipe.ConnectAsync(attempt == 0 ? 800 : 2000, cancellationToken);
 
                     using var reader = new StreamReader(pipe);
                     using var writer = new StreamWriter(pipe) { AutoFlush = true };
 
                     var req = new IPCRequest(command, isDryRun, backupId, null, targetId, enable, serviceStartMode, flags);
                     string reqJson = JsonSerializer.Serialize(req, OptimaxJsonContext.Default.IPCRequest);
-                    await writer.WriteLineAsync(reqJson.AsMemory());
+                    await writer.WriteLineAsync(reqJson.AsMemory(), cancellationToken);
 
                     IPCStreamChunk? lastChunk = null;
                     string? resJson;
-                    while ((resJson = await reader.ReadLineAsync()) != null)
+                    while ((resJson = await reader.ReadLineAsync(cancellationToken)) != null)
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
                         if (string.IsNullOrWhiteSpace(resJson)) continue;
 
                         try
@@ -71,18 +75,22 @@ namespace Optimax.UI
                         return new IPCResponse(true, lastChunk.Message, lastChunk.PayloadJson);
                     }
                 }
+                catch (OperationCanceledException)
+                {
+                    return new IPCResponse(false, "Operation cancelled by user.", null);
+                }
                 catch
                 {
                     if (attempt == 0)
                     {
                         // Try auto-starting Optimax.exe --ipc-service in the background
                         TryStartIpcServiceDaemon();
-                        await Task.Delay(500);
+                        await Task.Delay(500, cancellationToken);
                         continue;
                     }
 
                     // Fallback to launching Optimax.exe process directly if IPC Service fails to start
-                    return await ExecuteCliFallbackAsync(command, isDryRun, targetId, backupId, flags);
+                    return await ExecuteCliFallbackAsync(command, isDryRun, targetId, backupId, flags, cancellationToken);
                 }
             }
 
@@ -122,10 +130,11 @@ namespace Optimax.UI
             catch { }
         }
 
-        private static async Task<IPCResponse> ExecuteCliFallbackAsync(string command, bool isDryRun, string? targetId, string? backupId, string[]? flags)
+        private static async Task<IPCResponse> ExecuteCliFallbackAsync(string command, bool isDryRun, string? targetId, string? backupId, string[]? flags, System.Threading.CancellationToken cancellationToken = default)
         {
             try
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 string exePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Optimax.exe");
                 if (!File.Exists(exePath))
                 {
@@ -170,8 +179,8 @@ namespace Optimax.UI
                 using var proc = Process.Start(psi);
                 if (proc == null) return new IPCResponse(false, "Failed to start Optimax process.", null);
 
-                string output = await proc.StandardOutput.ReadToEndAsync();
-                await proc.WaitForExitAsync();
+                string output = await proc.StandardOutput.ReadToEndAsync(cancellationToken);
+                await proc.WaitForExitAsync(cancellationToken);
 
                 string payloadJson = "";
                 string logText = "";

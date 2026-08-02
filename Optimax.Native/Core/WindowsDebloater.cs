@@ -50,7 +50,7 @@ namespace Optimax.Core
         }
     }
 
-    public class WindowsDebloater
+    public class WindowsDebloater : IWindowsDebloater
     {
         public List<DebloatItemDto> GetAvailableDebloatItems()
         {
@@ -127,45 +127,33 @@ namespace Optimax.Core
             var uwpList = new List<DebloatItemDto>();
             try
             {
-                string psCmd = "Get-AppxPackage | Where-Object { -not $_.IsFramework -and -not $_.NonRemovable } | Select-Object -Property Name, PackageFullName | ConvertTo-Json";
-                var psi = new ProcessStartInfo
+                using var rootKey = Registry.LocalMachine.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Appx\AppxAllUserStore\Applications");
+                if (rootKey != null)
                 {
-                    FileName = "powershell.exe",
-                    Arguments = $"-NoProfile -ExecutionPolicy Bypass -Command \"{psCmd}\"",
-                    UseShellExecute = false,
-                    RedirectStandardOutput = true,
-                    CreateNoWindow = true
-                };
-                using var proc = Process.Start(psi);
-                string json = proc?.StandardOutput.ReadToEnd() ?? "";
-                proc?.WaitForExit(4000);
-
-                if (!string.IsNullOrWhiteSpace(json))
-                {
-                    using var doc = JsonDocument.Parse(json);
-                    if (doc.RootElement.ValueKind == JsonValueKind.Array)
+                    foreach (var subKeyName in rootKey.GetSubKeyNames())
                     {
-                        foreach (var elem in doc.RootElement.EnumerateArray())
-                        {
-                            string name = elem.TryGetProperty("Name", out var n) ? n.GetString() ?? "" : "";
-                            string fullName = elem.TryGetProperty("PackageFullName", out var fn) ? fn.GetString() ?? "" : "";
+                        string packageName = subKeyName;
+                        int firstUnderscore = packageName.IndexOf('_');
+                        string appName = firstUnderscore > 0 ? packageName.Substring(0, firstUnderscore) : packageName;
 
-                            if (!string.IsNullOrEmpty(name) && IsRemovableUwpPackage(name))
-                            {
-                                string cleanTitle = FormatUwpDisplayName(name);
-                                uwpList.Add(new DebloatItemDto(
-                                    $"uwp_{name}",
-                                    "Ứng Dụng UWP (Quét Động)",
-                                    $"Gỡ UWP App: {cleanTitle}",
-                                    $"Gỡ ứng dụng UWP '{fullName}' thực tế trên máy.",
-                                    false
-                                ));
-                            }
+                        if (!string.IsNullOrEmpty(appName) && IsRemovableUwpPackage(appName))
+                        {
+                            string cleanTitle = FormatUwpDisplayName(appName);
+                            uwpList.Add(new DebloatItemDto(
+                                $"uwp_{appName}",
+                                "Ứng Dụng UWP (Registry Scan)",
+                                $"Gỡ UWP App: {cleanTitle}",
+                                $"Gỡ ứng dụng UWP '{packageName}' phát hiện trực tiếp qua Windows Registry.",
+                                false
+                            ));
                         }
                     }
                 }
             }
-            catch (Exception ex) { OptimaxLogger.Warn("Dynamic UWP package enumeration via PowerShell failed", ex); }
+            catch (Exception ex)
+            {
+                OptimaxLogger.Warn("Registry native UWP package scan failed", ex);
+            }
             return uwpList;
         }
 
@@ -450,44 +438,35 @@ namespace Optimax.Core
             catch (Exception ex) { OptimaxLogger.Warn("Failed to disable Advertising ID via registry", ex); }
         }
 
+        private static readonly System.Text.RegularExpressions.Regex SafePackageRegex = new System.Text.RegularExpressions.Regex(@"^[a-zA-Z0-9\.\-]+$", System.Text.RegularExpressions.RegexOptions.Compiled);
+
         private int RemoveUwpBloatwareInternal()
         {
             string[] packages = new[]
             {
-                "*Cortana*",
-                "*BingNews*",
-                "*BingWeather*",
-                "*GetHelp*",
-                "*Getstarted*",
-                "*MicrosoftSolitaireCollection*",
-                "*People*",
-                "*YourPhone*",
-                "*ZuneMusic*",
-                "*ZuneVideo*",
-                "*WindowsMaps*",
-                "*XboxApp*",
-                "*XboxGameOverlay*",
-                "*XboxGamingOverlay*"
+                "Cortana",
+                "BingNews",
+                "BingWeather",
+                "GetHelp",
+                "Getstarted",
+                "MicrosoftSolitaireCollection",
+                "People",
+                "YourPhone",
+                "ZuneMusic",
+                "ZuneVideo",
+                "WindowsMaps",
+                "XboxApp",
+                "XboxGameOverlay",
+                "XboxGamingOverlay"
             };
 
             int count = 0;
             foreach (var pkg in packages)
             {
-                try
+                if (RemoveSpecificUwpPackageInternal(pkg))
                 {
-                    string psCommand = $"Get-AppxPackage -Name '{pkg}' | Remove-AppxPackage -ErrorAction SilentlyContinue";
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = "powershell.exe",
-                        Arguments = $"-NoProfile -ExecutionPolicy Bypass -Command \"{psCommand}\"",
-                        UseShellExecute = false,
-                        CreateNoWindow = true
-                    };
-                    using var proc = Process.Start(psi);
-                    proc?.WaitForExit(20000);
                     count++;
                 }
-                catch (Exception ex) { OptimaxLogger.Warn($"Failed to remove UWP bloatware package: {pkg}", ex); }
             }
             return count;
         }
@@ -495,23 +474,40 @@ namespace Optimax.Core
         private static bool RemoveSpecificUwpPackageInternal(string packageName)
         {
             if (string.IsNullOrWhiteSpace(packageName)) return false;
+
+            string cleanName = packageName.Trim('*', '\'', '"');
+            if (!SafePackageRegex.IsMatch(cleanName))
+            {
+                OptimaxLogger.Error($"Sanitization blocked dangerous UWP package name: '{packageName}'", null);
+                return false;
+            }
+
             try
             {
-                string psCommand = $"Get-AppxPackage -Name '*{packageName}*' | Remove-AppxPackage -ErrorAction SilentlyContinue";
                 var psi = new ProcessStartInfo
                 {
                     FileName = "powershell.exe",
-                    Arguments = $"-NoProfile -ExecutionPolicy Bypass -Command \"{psCommand}\"",
                     UseShellExecute = false,
-                    CreateNoWindow = true
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
                 };
+
+                psi.ArgumentList.Add("-NoProfile");
+                psi.ArgumentList.Add("-NonInteractive");
+                psi.ArgumentList.Add("-ExecutionPolicy");
+                psi.ArgumentList.Add("Bypass");
+                psi.ArgumentList.Add("-Command");
+                psi.ArgumentList.Add("Get-AppxPackage -Name $args[0] | Remove-AppxPackage -ErrorAction SilentlyContinue");
+                psi.ArgumentList.Add($"*{cleanName}*");
+
                 using var proc = Process.Start(psi);
                 bool exited = proc?.WaitForExit(20000) ?? false;
-                return exited;
+                return exited && (proc?.ExitCode == 0);
             }
             catch (Exception ex)
             {
-                OptimaxLogger.Warn($"Failed to remove specific UWP package: {packageName}", ex);
+                OptimaxLogger.Warn($"Failed to remove specific UWP package safely: {packageName}", ex);
                 return false;
             }
         }
