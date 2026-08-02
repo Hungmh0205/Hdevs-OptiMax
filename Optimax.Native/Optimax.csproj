@@ -10,6 +10,7 @@
     <RootNamespace>Optimax</RootNamespace>
     <AssemblyName>Optimax</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

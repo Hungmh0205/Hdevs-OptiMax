@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:Optimax.UI"
         Title="OPTIMAX - BỘ TỐI ƯU HÓA WINDOWS TOÀN DIỆN (WPF NATIVE)" Height="740" Width="1140" MinHeight="580" MinWidth="900"
+        Icon="app.ico"
         WindowStartupLocation="CenterScreen"
         Background="#0B0F19" Foreground="#F8FAFC"
         FontFamily="Segoe UI, Inter, Arial">
