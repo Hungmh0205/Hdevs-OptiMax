@@ -6,6 +6,12 @@ using Optimax.IPC;
 
 namespace Optimax.Core
 {
+    /// <summary>
+    /// Deep Safe Registry Cleaner — scans for orphaned, invalid, and leftover registry keys.
+    /// Note: Registry cleaning is performed for System Hygiene (cleaning post-uninstall clutter)
+    /// rather than raw performance gains, as Microsoft confirms registry size does not impact OS speed.
+    /// Includes Transactional Rollback snapshot protection and a strict system file whitelist.
+    /// </summary>
     public class DeepRegistryScanner : IDeepRegistryScanner
     {
         private static readonly HashSet<string> WhitelistedSystemPaths;

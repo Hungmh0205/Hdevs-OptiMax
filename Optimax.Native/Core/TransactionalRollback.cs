@@ -290,6 +290,38 @@ namespace Optimax.Core
             return false;
         }
 
+        /// <summary>
+        /// Delete ALL backup snapshots stored in the backup repository directory.
+        /// Returns the number of successfully deleted backup packages.
+        /// </summary>
+        public int DeleteAllBackups()
+        {
+            int deletedCount = 0;
+            try
+            {
+                if (Directory.Exists(_backupRoot))
+                {
+                    foreach (var subDir in Directory.GetDirectories(_backupRoot))
+                    {
+                        try
+                        {
+                            Directory.Delete(subDir, true);
+                            deletedCount++;
+                        }
+                        catch (Exception ex)
+                        {
+                            OptimaxLogger.Warn($"Failed to delete backup directory: {subDir}", ex);
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                OptimaxLogger.Warn("Failed to delete all backups from repository", ex);
+            }
+            return deletedCount;
+        }
+
         private static object ConvertJsonValueToRegistryType(object originalVal, RegistryValueKind valueKind)
         {
             if (originalVal is JsonElement elem)

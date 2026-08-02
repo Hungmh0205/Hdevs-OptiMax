@@ -680,7 +680,8 @@
                                 </ComboBox.ItemContainerStyle>
                             </ComboBox>
                             <Button x:Name="BtnRollback" Content="↩️ Rollback" Style="{StaticResource BtnOutline}" Click="BtnRollback_Click" Margin="0,0,6,0"/>
-                            <Button x:Name="BtnDeleteBackup" Content="🗑️ Xóa" Style="{StaticResource BtnOutline}" Click="BtnDeleteBackup_Click" Foreground="#EF4444" BorderBrush="#991B1B"/>
+                            <Button x:Name="BtnDeleteBackup" Content="🗑️ Xóa" Style="{StaticResource BtnOutline}" Click="BtnDeleteBackup_Click" Foreground="#EF4444" BorderBrush="#991B1B" Margin="0,0,6,0"/>
+                            <Button x:Name="BtnDeleteAllBackups" Content="💥 Xóa Tất Cả" Style="{StaticResource BtnOutline}" Click="BtnDeleteAllBackups_Click" Foreground="#EF4444" BorderBrush="#991B1B"/>
                         </StackPanel>
 
                         <Button x:Name="BtnRestorePoint" Grid.Column="4" Content="🛡️ Tạo Điểm Khôi Phục" Style="{StaticResource BtnOutline}" Click="BtnRestorePoint_Click" Margin="0,0,10,0"/>

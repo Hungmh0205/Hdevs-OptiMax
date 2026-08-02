@@ -54,7 +54,7 @@ namespace Optimax.Core
 
             if ((canPurge || forceDeepPurge) && Interlocked.CompareExchange(ref _lastStandbyPurgeTicks, nowTicks, lastPurgeTicks) == lastPurgeTicks)
             {
-                // Safe Memory Trimming: Trim ONLY Optimax's own working set
+                // Step 1: Trim Optimax's own working set to reduce self footprint
                 try
                 {
                     using var currentProc = Process.GetCurrentProcess();
@@ -68,17 +68,39 @@ namespace Optimax.Core
                     OptimaxLogger.Trace("Failed to trim Optimax working set", ex);
                 }
 
-                standbyFlushed = true;
+                // Step 2: Purge System Standby List via NtSetSystemInformation
+                // This is the REAL standby list flush — requires SeProfileSingleProcessPrivilege
+                try
+                {
+                    standbyFlushed = _win32Api.PurgeStandbyList();
+                    if (standbyFlushed)
+                    {
+                        OptimaxLogger.Trace("System Standby List purged successfully.");
+                    }
+                    else
+                    {
+                        OptimaxLogger.Warn("System Standby List purge returned non-success. Process may lack SeProfileSingleProcessPrivilege or is not running as Administrator.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    OptimaxLogger.Warn("System Standby List purge failed", ex);
+                    standbyFlushed = false;
+                }
             }
 
             long finalAvailableBytes = GetAvailablePhysicalMemoryBytes();
             long bytesFreed = Math.Max(0, finalAvailableBytes - initialAvailableBytes);
 
+            string statusMsg = standbyFlushed
+                ? $"Đã xả System Standby List và thu hồi bộ nhớ thành công. RAM khả dụng: {finalAvailableBytes / (1024 * 1024)} MB (giải phóng {bytesFreed / (1024 * 1024)} MB)."
+                : $"Đã hoàn tất kiểm tra và thu hồi Working Set. RAM khả dụng: {finalAvailableBytes / (1024 * 1024)} MB.";
+
             return new MemoryTrimReport(
                 bytesFreed,
                 trimmedCount,
                 standbyFlushed,
-                $"Đã hoàn tất kiểm tra và thu hồi bộ nhớ an toàn. RAM khả dụng: {finalAvailableBytes / (1024 * 1024)} MB."
+                statusMsg
             );
         }
 

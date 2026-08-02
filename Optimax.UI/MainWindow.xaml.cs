@@ -650,6 +650,30 @@ namespace Optimax.UI
             }
         }
 
+        private async void BtnDeleteAllBackups_Click(object sender, RoutedEventArgs e)
+        {
+            var confirm = MessageBox.Show("💥 CẢNH BÁO XÓA TOÀN BỘ BACKUP:\n\nBạn có chắc chắn muốn XÓA VĨNH VIỄN TẤT CẢ các bản sao lưu Snapshot hệ thống hiện có?\n\nSau khi xóa, bạn sẽ KHÔNG THỂ rollback lại các thời điểm trước đó!", "Xác Nhận Xóa Tất Cả Snapshot", MessageBoxButton.YesNo, MessageBoxImage.Stop);
+            if (confirm == MessageBoxResult.Yes)
+            {
+                SetUiBusy(true, "Đang xóa toàn bộ các bản sao lưu Snapshot...");
+                try
+                {
+                    Log("ĐANG XÓA TOÀN BỘ CÁC BẢN SAO LƯU SNAPSHOT HỆ THỐNG...", "warn");
+                    var res = await IpcClient.SendCommandAsync("delete-all-backups", onProgressChunk: OnIpcProgressChunk);
+                    LogResponse(res);
+                    if (res.Success)
+                    {
+                        Log("[✓] Đã xóa thành công toàn bộ các bản sao lưu Snapshot hệ thống.", "success");
+                        _ = FetchBackupsAsync();
+                    }
+                }
+                finally
+                {
+                    SetUiBusy(false);
+                }
+            }
+        }
+
         // Toggle Autostart
         private async void BtnAutostartBadge_Click(object sender, RoutedEventArgs e) => ToggleAutostart();
         private async void BtnAutostartToggle_Click(object sender, RoutedEventArgs e) => ToggleAutostart();

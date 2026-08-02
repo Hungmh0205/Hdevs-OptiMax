@@ -189,8 +189,16 @@ namespace Optimax.Core
                             break;
 
                         case "-multidrivetrim":
-                            if (!isDryRun) RunCommand("defrag", "/O C:");
-                            result.Messages.Add((isDryRun ? "[DRY-RUN] Sẽ " : "") + "Tối ưu hóa & TRIM đĩa cứng SSD/NVMe (Multi-Drive Trim)");
+                            if (!isDryRun)
+                            {
+                                var trimmedDrives = TrimAllFixedDrives();
+                                result.Messages.Add($"Tối ưu hóa & TRIM đĩa cứng SSD/NVMe hoàn tất ({trimmedDrives.Count} ổ đĩa: {string.Join(", ", trimmedDrives)})");
+                            }
+                            else
+                            {
+                                var fixedDrives = GetFixedDriveLetters();
+                                result.Messages.Add($"[DRY-RUN] Sẽ tối ưu hóa & TRIM {fixedDrives.Count} ổ đĩa SSD/NVMe ({string.Join(", ", fixedDrives)})");
+                            }
                             result.TotalApplied++;
                             break;
 
@@ -524,6 +532,57 @@ namespace Optimax.Core
                 catch (Exception ex) { OptimaxLogger.Trace($"Failed to enumerate system temp directory: {dir}", ex); }
             }
             return cleanedFiles;
+        }
+
+        /// <summary>
+        /// Discover all fixed (local) drive letters on the system.
+        /// Used by Multi-Drive TRIM to enumerate targets.
+        /// </summary>
+        private static List<string> GetFixedDriveLetters()
+        {
+            var drives = new List<string>();
+            try
+            {
+                foreach (var drive in DriveInfo.GetDrives())
+                {
+                    if (drive.IsReady && drive.DriveType == DriveType.Fixed)
+                    {
+                        drives.Add(drive.Name.TrimEnd('\\'));
+                    }
+                }
+            }
+            catch (Exception ex) { OptimaxLogger.Trace("Failed to enumerate fixed drives", ex); }
+
+            if (drives.Count == 0) drives.Add("C:");
+            return drives;
+        }
+
+        /// <summary>
+        /// Execute TRIM/Optimize on all fixed (SSD/NVMe/HDD) drives.
+        /// defrag /O automatically selects the correct operation:
+        /// - SSD/NVMe → TRIM (retrim)
+        /// - HDD → Defragment
+        /// Returns the list of drives that were optimized.
+        /// </summary>
+        private static List<string> TrimAllFixedDrives()
+        {
+            var trimmed = new List<string>();
+            var drives = GetFixedDriveLetters();
+
+            foreach (var drive in drives)
+            {
+                try
+                {
+                    RunCommand("defrag", $"/O {drive}", timeoutMs: 120000);
+                    trimmed.Add(drive);
+                }
+                catch (Exception ex)
+                {
+                    OptimaxLogger.Trace($"TRIM/Optimize failed for drive {drive}", ex);
+                }
+            }
+
+            return trimmed;
         }
     }
 }

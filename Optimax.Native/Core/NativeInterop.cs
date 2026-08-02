@@ -1,4 +1,5 @@
 using System;
+using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.ServiceProcess;
 
@@ -171,6 +172,105 @@ namespace Optimax.Core
             catch (Exception ex) { OptimaxLogger.Trace($"Failed to restore service run state: {serviceName}", ex); }
 
             return true;
+        }
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    //  Kernel Memory Management — NtSetSystemInformation for Standby List Purge
+    // ═══════════════════════════════════════════════════════════
+
+    public enum SYSTEM_MEMORY_LIST_COMMAND : int
+    {
+        MemoryCaptureAccessedBits = 0,
+        MemoryCaptureAndResetAccessedBits = 1,
+        MemoryEmptyWorkingSets = 2,
+        MemoryFlushModifiedList = 3,
+        MemoryPurgeStandbyList = 4,
+        MemoryPurgeLowPriorityStandbyList = 5,
+        MemoryCommandMax = 6
+    }
+
+    public static class KernelMemoryInterop
+    {
+        private const int SystemMemoryListInformation = 80;
+        private const uint SE_PRIVILEGE_ENABLED = 0x00000002;
+        private const uint TOKEN_ADJUST_PRIVILEGES = 0x0020;
+        private const uint TOKEN_QUERY = 0x0008;
+
+        [DllImport("ntdll.dll", ExactSpelling = true, SetLastError = false)]
+        private static extern int NtSetSystemInformation(int SystemInformationClass, ref int SystemInformation, int SystemInformationLength);
+
+        [DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool OpenProcessToken(IntPtr ProcessHandle, uint DesiredAccess, out IntPtr TokenHandle);
+
+        [DllImport("advapi32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool LookupPrivilegeValueW(string? lpSystemName, string lpName, out long lpLuid);
+
+        [DllImport("advapi32.dll", ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool AdjustTokenPrivileges(IntPtr TokenHandle, [MarshalAs(UnmanagedType.Bool)] bool DisableAllPrivileges, ref TOKEN_PRIVILEGES NewState, uint BufferLength, IntPtr PreviousState, IntPtr ReturnLength);
+
+        [DllImport("kernel32.dll", ExactSpelling = true, SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool CloseHandle(IntPtr hObject);
+
+        [DllImport("kernel32.dll", ExactSpelling = true)]
+        private static extern IntPtr GetCurrentProcess();
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct TOKEN_PRIVILEGES
+        {
+            public uint PrivilegeCount;
+            public long Luid;
+            public uint Attributes;
+        }
+
+        public static bool EnablePrivilege(string privilegeName)
+        {
+            IntPtr tokenHandle = IntPtr.Zero;
+            try
+            {
+                if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, out tokenHandle))
+                    return false;
+
+                if (!LookupPrivilegeValueW(null, privilegeName, out long luid))
+                    return false;
+
+                var tp = new TOKEN_PRIVILEGES
+                {
+                    PrivilegeCount = 1,
+                    Luid = luid,
+                    Attributes = SE_PRIVILEGE_ENABLED
+                };
+
+                if (!AdjustTokenPrivileges(tokenHandle, false, ref tp, 0, IntPtr.Zero, IntPtr.Zero))
+                    return false;
+
+                return Marshal.GetLastWin32Error() == 0;
+            }
+            catch
+            {
+                return false;
+            }
+            finally
+            {
+                if (tokenHandle != IntPtr.Zero)
+                    CloseHandle(tokenHandle);
+            }
+        }
+
+        public static int PurgeStandbyList()
+        {
+            int command = (int)SYSTEM_MEMORY_LIST_COMMAND.MemoryPurgeStandbyList;
+            return NtSetSystemInformation(SystemMemoryListInformation, ref command, sizeof(int));
+        }
+
+        public static int FlushModifiedList()
+        {
+            int command = (int)SYSTEM_MEMORY_LIST_COMMAND.MemoryFlushModifiedList;
+            return NtSetSystemInformation(SystemMemoryListInformation, ref command, sizeof(int));
         }
     }
 }

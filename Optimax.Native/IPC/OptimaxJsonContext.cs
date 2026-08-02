@@ -41,6 +41,7 @@ namespace Optimax.IPC
     [JsonSerializable(typeof(BackupItemDto))]
     [JsonSerializable(typeof(BackupItemDto[]))]
     [JsonSerializable(typeof(List<BackupItemDto>))]
+    [JsonSerializable(typeof(Winapp2UpdateReport))]
     public partial class OptimaxJsonContext : JsonSerializerContext
     {
     }

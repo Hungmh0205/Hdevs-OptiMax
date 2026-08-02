@@ -28,6 +28,11 @@ namespace Optimax.Core
     {
         bool EmptyWorkingSet(System.IntPtr hProcess);
         bool GetSystemMemoryStatus(out MEMORYSTATUSEX memStatus);
+        /// <summary>
+        /// Purge the System Standby List via NtSetSystemInformation.
+        /// Returns true if the operation succeeded (NTSTATUS 0).
+        /// </summary>
+        bool PurgeStandbyList();
     }
 
 }
